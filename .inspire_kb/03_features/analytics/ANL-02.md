@@ -5,7 +5,7 @@
 **Priority:** Core
 **State:** 🟢 Implemented
 **Dependencies:** [[ANL-01]]
-**ADRs referenced:** [[../../01_adr/adr-clickhouse-primary-database]], [[../../01_adr/adr-variant-history-current-projection]]
+**ADRs referenced:** [[../../01_adr/adr-clickhouse-primary-database]], [[../../01_adr/adr-variant-history-current-projection]], [[../../01_adr/adr-variant-structured-query]]
 
 ## Actor
 
@@ -68,5 +68,7 @@ a validation error that names the unknown field.
 
 ## Notes
 
-The initial filter set is a starting subset. The intended direction (next iteration)
-is a richer query capability decoupled from the database engine — see the tracker.
+The query is a **structured condition tree** (`and`/`or`/`not` + `{field, op, value}`
+leaves) sent to `POST /variants/query`, translated to parameterized ClickHouse — see
+[[../../01_adr/adr-variant-structured-query]]. Transport moves to GraphQL in a later
+iteration (same logical contract) — tracked in the tracker.

@@ -1,19 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { NewVariant, Variant } from '../domain/variant';
-import {
-  VariantFilters,
-  VariantRepository,
-} from '../infrastructure/variant.repository';
+import { VariantQuery } from '../domain/variant-query';
+import { VariantRepository } from '../infrastructure/variant.repository';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
-
-export interface ListVariantsInput {
-  filters: VariantFilters;
-  limit?: number;
-  cursor?: string;
-}
 
 export interface VariantPage {
   items: Variant[];
@@ -21,9 +13,9 @@ export interface VariantPage {
 }
 
 /**
- * Business logic for variants. Realizes analytics::variant::create (ANL-01):
- * assigns the system-generated fields and persists the record. Throws generic
- * `Error` on failure — translating to HTTP is the controller/filter's job.
+ * Business logic for variants. Realizes analytics::variant::create (ANL-01) and
+ * analytics::variant::query (ANL-02). Throws generic `Error` on infrastructure
+ * failure — translating to HTTP is the controller/filter's job.
  */
 @Injectable()
 export class VariantService {
@@ -31,7 +23,8 @@ export class VariantService {
 
   /**
    * Insert a variant. `id` and `created_at` are system-generated here and are not
-   * taken from the caller. Returns the stored record's generated id.
+   * taken from the caller; `version_date` (the logical version) comes from input.
+   * Returns the stored record's generated id.
    */
   async create(input: NewVariant): Promise<{ id: string }> {
     const variant: Variant = {
@@ -50,14 +43,19 @@ export class VariantService {
   }
 
   /**
-   * Return a page of variants matching the filters. `limit` defaults to 50 and is
-   * capped at 200; `next_cursor` is non-null when more results remain.
+   * Query the current variants matching the structured query. `limit` defaults to
+   * 50 and is capped at 200; `next_cursor` is non-null when more results remain.
    */
-  async list(input: ListVariantsInput): Promise<VariantPage> {
+  async query(input: VariantQuery): Promise<VariantPage> {
     const limit = Math.min(Math.max(input.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
     const offset = this.decodeCursor(input.cursor);
 
-    const rows = await this.repository.queryCurrent(input.filters, limit + 1, offset);
+    const rows = await this.repository.queryCurrent(
+      input.where,
+      input.order_by,
+      limit + 1,
+      offset,
+    );
     const hasMore = rows.length > limit;
 
     return {

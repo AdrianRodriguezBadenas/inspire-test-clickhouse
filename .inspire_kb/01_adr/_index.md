@@ -9,6 +9,7 @@ cross-cutting decisions under *Transversales*.
 |-----|-------|--------|
 | [[adr-clickhouse-primary-database]] | ClickHouse as the primary database | implemented |
 | [[adr-variant-history-current-projection]] | Append-only variant history with current-version reads | design |
+| [[adr-variant-structured-query]] | Structured query contract for variant reads | design |
 
 ## Superseded
 

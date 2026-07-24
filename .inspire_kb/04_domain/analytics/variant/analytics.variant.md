@@ -356,4 +356,4 @@ frequency (`popaf_`), gene (`gene_`), feature (`feat_`), external databases (`ex
 | Action | Touch | Notes |
 |--------|-------|-------|
 | [[analytics.variant.create|analytics::variant::create]] | write | Inserts the record. |
-| [[analytics.variant.list|analytics::variant::list]] | read | Queries the current variants (filtered, paginated). |
+| [[analytics.variant.query|analytics::variant::query]] | read | Queries the current variants (structured query, paginated). |

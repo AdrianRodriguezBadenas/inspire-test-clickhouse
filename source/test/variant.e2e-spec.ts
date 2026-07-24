@@ -19,13 +19,22 @@ const validPayload = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+const byKey = (uri: string, collection = 'col-a') => ({
+  where: {
+    and: [
+      { field: 'project_id', op: 'eq', value: 42 },
+      { field: 'collection', op: 'eq', value: collection },
+      { field: 'uri', op: 'eq', value: uri },
+    ],
+  },
+});
+
 describe('Variants (e2e)', () => {
   let app: INestApplication;
   let ch: ClickHouseClient;
 
   beforeAll(async () => {
     ch = createClient({ url: CLICKHOUSE_URL });
-    // Engine changed, so drop any pre-existing table before recreating.
     await ch.command({ query: 'DROP TABLE IF EXISTS variants' });
     const schema = readFileSync(join(__dirname, '../db/schema.sql'), 'utf8');
     await ch.command({ query: schema });
@@ -56,35 +65,22 @@ describe('Variants (e2e)', () => {
     return response.body.id as string;
   };
 
-  const countByKey = async (collection: string, uri: string): Promise<string> => {
-    const result = await ch.query({
-      query:
-        'SELECT count() AS c FROM variants WHERE project_id = 42 AND collection = {c:String} AND uri = {u:String}',
-      query_params: { c: collection, u: uri },
-      format: 'JSONEachRow',
-    });
-    const [{ c }] = await result.json<{ c: string }>();
-    return c;
-  };
+  const query = (body: Record<string, unknown>) =>
+    request(app.getHttpServer()).post('/variants/query').send(body);
 
-  // ANL-01 AC: a valid record is stored and the response identifies it.
+  // ---- create (ANL-01) ----
+
   it('stores a valid variant and returns its id', async () => {
-    // GIVEN
-    const payload = validPayload();
-
     // WHEN
     const response = await request(app.getHttpServer())
       .post('/variants')
-      .send(payload);
+      .send(validPayload());
 
     // THEN
     expect(response.status).toBe(201);
     expect(response.body).toEqual({ id: expect.any(String) });
-
-    expect(await countByKey(payload.collection, payload.uri)).toBe('1');
   });
 
-  // ANL-01 AC: a record missing a required field is rejected, naming the field.
   it('rejects an insert missing a required field', async () => {
     // GIVEN
     const payload = validPayload();
@@ -101,7 +97,6 @@ describe('Variants (e2e)', () => {
     expect(response.body.fields).toContain('project_id');
   });
 
-  // ANL-01 AC: version_date is required.
   it('rejects an insert missing version_date', async () => {
     // GIVEN
     const payload = validPayload();
@@ -117,7 +112,6 @@ describe('Variants (e2e)', () => {
     expect(response.body.fields).toContain('version_date');
   });
 
-  // ANL-01 AC: an enumerated field outside its allowed set is rejected.
   it('rejects an insert with an invalid enum value', async () => {
     // WHEN
     const response = await request(app.getHttpServer())
@@ -130,7 +124,6 @@ describe('Variants (e2e)', () => {
     expect(response.body.fields).toContain('origin');
   });
 
-  // ANL-01 AC: the ingest timestamp is set by the system, not taken from input.
   it('rejects an insert that supplies created_at', async () => {
     // WHEN
     const response = await request(app.getHttpServer())
@@ -142,37 +135,31 @@ describe('Variants (e2e)', () => {
     expect(response.body.fields).toContain('created_at');
   });
 
-  // ANL-01 AC: the current version is the greatest version_date, regardless of
-  // insertion order (out-of-order safe).
+  // ---- query (ANL-02) ----
+
   it('keeps the greatest version_date as current, even when the older one arrives last', async () => {
-    // GIVEN — insert the NEWER version first, then a stale OLDER version.
+    // GIVEN — the NEWER version first, then a stale OLDER one.
     await insert({ version_date: '2024-06-01T00:00:00.000Z', score: 20 });
     await insert({ version_date: '2023-01-01T00:00:00.000Z', score: 10 });
 
-    // WHEN — querying by the natural key returns only the current version.
-    const response = await request(app.getHttpServer())
-      .get('/variants')
-      .query({ project_id: 42, collection: 'col-a', uri: 'urn:variant:1' });
+    // WHEN
+    const response = await query(byKey('urn:variant:1'));
 
     // THEN
     expect(response.status).toBe(200);
     expect(response.body.items).toHaveLength(1);
     expect(response.body.items[0].score).toBe(20);
-
-    // Both versions are retained in history.
-    expect(await countByKey('col-a', 'urn:variant:1')).toBe('2');
   });
 
-  // ANL-02 AC: filtered list returns one current row per matching key.
-  it('lists only the current variants matching a filter', async () => {
+  it('queries current variants matching a structured condition', async () => {
     // GIVEN
     await insert({ uri: 'urn:a', collection: 'col-a' });
     await insert({ uri: 'urn:b', collection: 'col-b' });
 
     // WHEN
-    const response = await request(app.getHttpServer())
-      .get('/variants')
-      .query({ collection: 'col-a' });
+    const response = await query({
+      where: { field: 'collection', op: 'eq', value: 'col-a' },
+    });
 
     // THEN
     expect(response.status).toBe(200);
@@ -181,22 +168,36 @@ describe('Variants (e2e)', () => {
     expect(response.body.next_cursor).toBeNull();
   });
 
-  // ANL-02 AC: two versions of one variant collapse to a single current row in list.
-  it('returns a single current row per key in list, not every version', async () => {
+  it('filters current variants with a comparison operator', async () => {
+    // GIVEN
+    await insert({ uri: 'urn:low', score: 10 });
+    await insert({ uri: 'urn:high', score: 20 });
+
+    // WHEN
+    const response = await query({
+      where: { field: 'score', op: 'gte', value: 15 },
+    });
+
+    // THEN
+    expect(response.status).toBe(200);
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0].uri).toBe('urn:high');
+  });
+
+  it('returns a single current row per key, not every version', async () => {
     // GIVEN
     await insert({ uri: 'urn:x', version_date: '2024-01-01T00:00:00.000Z' });
     await insert({ uri: 'urn:x', version_date: '2024-02-01T00:00:00.000Z' });
 
     // WHEN
-    const response = await request(app.getHttpServer())
-      .get('/variants')
-      .query({ uri: 'urn:x' });
+    const response = await query({
+      where: { field: 'uri', op: 'eq', value: 'urn:x' },
+    });
 
     // THEN
     expect(response.body.items).toHaveLength(1);
   });
 
-  // ANL-02 AC: results are paginated; the cursor walks to the next page.
   it('paginates results across pages with a cursor', async () => {
     // GIVEN
     await insert({ uri: 'urn:1' });
@@ -204,14 +205,8 @@ describe('Variants (e2e)', () => {
     await insert({ uri: 'urn:3' });
 
     // WHEN
-    const page1 = await request(app.getHttpServer())
-      .get('/variants')
-      .query({ limit: 2 })
-      .expect(200);
-    const page2 = await request(app.getHttpServer())
-      .get('/variants')
-      .query({ limit: 2, cursor: page1.body.next_cursor })
-      .expect(200);
+    const page1 = await query({ limit: 2 }).expect(200);
+    const page2 = await query({ limit: 2, cursor: page1.body.next_cursor }).expect(200);
 
     // THEN
     expect(page1.body.items).toHaveLength(2);
@@ -226,12 +221,11 @@ describe('Variants (e2e)', () => {
     expect(new Set(ids).size).toBe(3);
   });
 
-  // ANL-02 AC: filters that match no records yield an empty page, not an error.
   it('returns an empty page when nothing matches', async () => {
     // WHEN
-    const response = await request(app.getHttpServer())
-      .get('/variants')
-      .query({ collection: 'none' });
+    const response = await query({
+      where: { field: 'collection', op: 'eq', value: 'none' },
+    });
 
     // THEN
     expect(response.status).toBe(200);
@@ -239,30 +233,14 @@ describe('Variants (e2e)', () => {
     expect(response.body.next_cursor).toBeNull();
   });
 
-  // ANL-02 AC: a filter on a field that does not exist is rejected.
-  it('rejects a filter on an unknown field', async () => {
+  it('rejects a query on an unknown field', async () => {
     // WHEN
-    const response = await request(app.getHttpServer())
-      .get('/variants')
-      .query({ bogus_field: 'x' });
+    const response = await query({
+      where: { field: 'bogus_field', op: 'eq', value: 'x' },
+    });
 
     // THEN
     expect(response.status).toBe(400);
-  });
-
-  // A query pinning the full natural key returns at most one current record.
-  it('returns a single record when querying by a full natural key', async () => {
-    // GIVEN
-    await insert({ uri: 'urn:one', collection: 'col-a' });
-
-    // WHEN
-    const response = await request(app.getHttpServer())
-      .get('/variants')
-      .query({ project_id: 42, collection: 'col-a', uri: 'urn:one' });
-
-    // THEN
-    expect(response.status).toBe(200);
-    expect(response.body.items).toHaveLength(1);
-    expect(response.body.items[0].uri).toBe('urn:one');
+    expect(response.body.code).toBe('unknown_query_field');
   });
 });

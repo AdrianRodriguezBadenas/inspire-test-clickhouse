@@ -41,9 +41,18 @@ so the query interface survives a future change of database engine.
   translation layer mapping it to ClickHouse (and swappable later).
 - Preserve the current-only + tenant-scoping semantics (see [[TASK-hwhrvk]]).
 
+## Progress (2026-07-24)
+
+The engine-agnostic **structured query AST** is done: `POST /variants/query` accepts
+an and/or/not + `{field, op, value}` tree, validated (field allow-list + operator
+whitelist) and translated to parameterized ClickHouse behind the repository. Recorded
+in [[adr-variant-structured-query]]; realizes ANL-02 (`analytics::variant::query`).
+**Remaining: the GraphQL transport migration** (same AST as the logical contract).
+
 ## Acceptance criteria
 
-- [ ] Query approach chosen and recorded in an ADR.
-- [ ] Public query contract defined independently of the database engine.
-- [ ] ClickHouse reachable only behind a translation layer that the contract does
-      not depend on.
+- [x] Query approach chosen and recorded in an ADR ([[adr-variant-structured-query]]).
+- [x] Public query contract defined independently of the database engine (the AST).
+- [x] ClickHouse reachable only behind a translation layer the contract does not
+      depend on (`variant-query.translator`).
+- [ ] GraphQL transport exposing the same query contract.

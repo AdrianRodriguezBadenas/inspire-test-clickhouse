@@ -11,8 +11,8 @@ export class CreateVariantResponseDto {
   }
 }
 
-/** A page of variants (analytics::variant::list). */
-export class ListVariantsResponseDto {
+/** A page of current variants (analytics::variant::query). */
+export class VariantPageDto {
   @ApiProperty({ type: 'array', items: { type: 'object' }, description: 'Matching variant records.' })
   items: Variant[];
 

@@ -6,6 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { QueryValidationError } from '../analytics/domain/variant-query';
 
 /**
  * Shapes every error response as `{ code, message, ... }`.
@@ -31,6 +32,14 @@ export class AppExceptionFilter implements ExceptionFilter {
         .json(
           typeof body === 'string' ? { code: 'error', message: body } : body,
         );
+      return;
+    }
+
+    // Client query-validation failures → 400 with the descriptor error code.
+    if (exception instanceof QueryValidationError) {
+      response
+        .status(400)
+        .json({ code: exception.code, message: exception.message });
       return;
     }
 

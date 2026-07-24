@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post } from '@nestjs/common';
 import {
   ApiOkResponse,
   ApiOperation,
@@ -7,10 +7,10 @@ import {
 } from '@nestjs/swagger';
 import { VariantService } from '../application/variant.service';
 import { CreateVariantDto } from './dto/create-variant.dto';
-import { ListVariantsDto } from './dto/list-variants.dto';
+import { QueryVariantsDto } from './dto/query-variants.dto';
 import {
   CreateVariantResponseDto,
-  ListVariantsResponseDto,
+  VariantPageDto,
 } from './dto/variant-response.dto';
 
 @ApiTags('variants')
@@ -26,23 +26,19 @@ export class VariantController {
     return new CreateVariantResponseDto(result);
   }
 
-  @Get()
+  @Post('query')
+  @HttpCode(200)
   @ApiOperation({
-    summary: 'Query current variants matching optional filters, paginated.',
+    summary: 'Query the current variants with a structured query, paginated.',
   })
-  @ApiOkResponse({ type: ListVariantsResponseDto })
-  async list(@Query() query: ListVariantsDto): Promise<ListVariantsResponseDto> {
-    const page = await this.service.list({
-      filters: {
-        project_id: query.project_id,
-        collection: query.collection,
-        uri: query.uri,
-        created_from: query.created_from,
-        created_to: query.created_to,
-      },
-      limit: query.limit,
-      cursor: query.cursor,
+  @ApiOkResponse({ type: VariantPageDto })
+  async query(@Body() dto: QueryVariantsDto): Promise<VariantPageDto> {
+    const page = await this.service.query({
+      where: dto.where,
+      order_by: dto.order_by,
+      limit: dto.limit,
+      cursor: dto.cursor,
     });
-    return new ListVariantsResponseDto(page);
+    return new VariantPageDto(page);
   }
 }

@@ -118,12 +118,12 @@ describe('VariantService', () => {
     repository.queryCurrent.mockResolvedValue(rows);
 
     // WHEN
-    const page = await service.list({ filters: {} });
+    const page = await service.query({});
 
     // THEN
     expect(page).toEqual({ items: rows, next_cursor: null });
 
-    expect(repository.queryCurrent).toHaveBeenCalledWith({}, 51, 0);
+    expect(repository.queryCurrent).toHaveBeenCalledWith(undefined, undefined, 51, 0);
   });
 
   // ANL-02 AC: when more results remain, a next cursor is returned and the page is
@@ -134,13 +134,13 @@ describe('VariantService', () => {
     repository.queryCurrent.mockResolvedValue(rows);
 
     // WHEN
-    const page = await service.list({ filters: {}, limit: 2 });
+    const page = await service.query({ limit: 2 });
 
     // THEN
     expect(page.items).toEqual([rows[0], rows[1]]);
     expect(page.next_cursor).toBe(Buffer.from('2').toString('base64'));
 
-    expect(repository.queryCurrent).toHaveBeenCalledWith({}, 3, 0);
+    expect(repository.queryCurrent).toHaveBeenCalledWith(undefined, undefined, 3, 0);
   });
 
   // ANL-02 AC: the page size is capped at 200.
@@ -149,10 +149,10 @@ describe('VariantService', () => {
     repository.queryCurrent.mockResolvedValue([]);
 
     // WHEN
-    await service.list({ filters: {}, limit: 500 });
+    await service.query({ limit: 500 });
 
     // THEN
-    expect(repository.queryCurrent).toHaveBeenCalledWith({}, 201, 0);
+    expect(repository.queryCurrent).toHaveBeenCalledWith(undefined, undefined, 201, 0);
   });
 
   // ANL-02 AC: a cursor resumes from the encoded offset.
@@ -162,9 +162,9 @@ describe('VariantService', () => {
     const cursor = Buffer.from('2').toString('base64');
 
     // WHEN
-    await service.list({ filters: {}, limit: 2, cursor });
+    await service.query({ limit: 2, cursor });
 
     // THEN
-    expect(repository.queryCurrent).toHaveBeenCalledWith({}, 3, 2);
+    expect(repository.queryCurrent).toHaveBeenCalledWith(undefined, undefined, 3, 2);
   });
 });
