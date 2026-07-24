@@ -10,9 +10,9 @@ prefix: ANL              # the module's feature / use-case ID prefix
 
 ## Overview
 
-Aggregated queries and reporting over the data stored in ClickHouse. Exposes the
-API surface for running analytical queries — aggregations, large scans, and
-reporting rollups — and returning their results.
+Stores annotated genomic variants in ClickHouse and exposes an API to insert and
+query them — inserting variant records, listing them filtered and paginated, and
+retrieving a single record by identifier.
 
 ## Relationships
 
@@ -24,7 +24,9 @@ first module of the product.
 
 _Index of the features in [`../03_features/analytics/`](../03_features/analytics):_
 
-- _None yet — add with `/inspire_feature create`._
+- [[../03_features/analytics/ANL-01|ANL-01]] — Insert a variant record into the store.
+- [[../03_features/analytics/ANL-02|ANL-02]] — Query variants (filtered paginated
+  list + retrieve one by identifier).
 
 ## Screens
 
