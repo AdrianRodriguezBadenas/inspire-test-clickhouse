@@ -35,29 +35,6 @@ export class VariantRepository {
   }
 
   /**
-   * Retrieve the current version of one variant by its natural key, or null when
-   * none matches. Current = the row with the greatest `version_date`.
-   */
-  async findCurrent(
-    projectId: number,
-    collection: string,
-    uri: string,
-  ): Promise<Variant | null> {
-    const result = await this.client.query({
-      query: `SELECT * FROM ${TABLE}
-        WHERE project_id = {project_id:UInt64}
-          AND collection = {collection:String}
-          AND uri = {uri:String}
-        ORDER BY version_date DESC
-        LIMIT 1`,
-      query_params: { project_id: projectId, collection, uri },
-      format: 'JSONEachRow',
-    });
-    const rows = await result.json<Variant>();
-    return rows[0] ?? null;
-  }
-
-  /**
    * Read the current version of variants matching the filters — one row per natural
    * key (the greatest `version_date`) — returning at most `limit` rows from `offset`.
    */

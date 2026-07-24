@@ -167,18 +167,4 @@ describe('VariantService', () => {
     // THEN
     expect(repository.queryCurrent).toHaveBeenCalledWith({}, 3, 2);
   });
-
-  // ANL-02 AC: retrieving a missing variant yields null (the controller maps to 404).
-  it('returns null when no current variant matches the natural key', async () => {
-    // GIVEN
-    repository.findCurrent.mockResolvedValue(null);
-
-    // WHEN
-    const result = await service.get(42, 'col-a', 'urn:missing');
-
-    // THEN
-    expect(result).toBeNull();
-
-    expect(repository.findCurrent).toHaveBeenCalledWith(42, 'col-a', 'urn:missing');
-  });
 });

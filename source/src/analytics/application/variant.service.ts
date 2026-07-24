@@ -66,18 +66,6 @@ export class VariantService {
     };
   }
 
-  /**
-   * Retrieve the current version of one variant by its natural key, or null when
-   * none matches.
-   */
-  async get(
-    projectId: number,
-    collection: string,
-    uri: string,
-  ): Promise<Variant | null> {
-    return this.repository.findCurrent(projectId, collection, uri);
-  }
-
   private encodeCursor(offset: number): string {
     return Buffer.from(String(offset)).toString('base64');
   }

@@ -149,14 +149,15 @@ describe('Variants (e2e)', () => {
     await insert({ version_date: '2024-06-01T00:00:00.000Z', score: 20 });
     await insert({ version_date: '2023-01-01T00:00:00.000Z', score: 10 });
 
-    // WHEN
+    // WHEN — querying by the natural key returns only the current version.
     const response = await request(app.getHttpServer())
-      .get('/variants/current')
+      .get('/variants')
       .query({ project_id: 42, collection: 'col-a', uri: 'urn:variant:1' });
 
     // THEN
     expect(response.status).toBe(200);
-    expect(response.body.score).toBe(20);
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0].score).toBe(20);
 
     // Both versions are retained in history.
     expect(await countByKey('col-a', 'urn:variant:1')).toBe('2');
@@ -249,31 +250,19 @@ describe('Variants (e2e)', () => {
     expect(response.status).toBe(400);
   });
 
-  // ANL-02 AC: retrieve the current version by natural key.
-  it('retrieves the current variant by natural key', async () => {
+  // A query pinning the full natural key returns at most one current record.
+  it('returns a single record when querying by a full natural key', async () => {
     // GIVEN
     await insert({ uri: 'urn:one', collection: 'col-a' });
 
     // WHEN
     const response = await request(app.getHttpServer())
-      .get('/variants/current')
+      .get('/variants')
       .query({ project_id: 42, collection: 'col-a', uri: 'urn:one' });
 
     // THEN
     expect(response.status).toBe(200);
-    expect(response.body.uri).toBe('urn:one');
-    expect(response.body.collection).toBe('col-a');
-  });
-
-  // ANL-02 AC: an unknown natural key returns not-found.
-  it('returns 404 for an unknown natural key', async () => {
-    // WHEN
-    const response = await request(app.getHttpServer())
-      .get('/variants/current')
-      .query({ project_id: 42, collection: 'col-a', uri: 'urn:absent' });
-
-    // THEN
-    expect(response.status).toBe(404);
-    expect(response.body.code).toBe('variant_not_found');
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0].uri).toBe('urn:one');
   });
 });
