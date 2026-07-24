@@ -2,7 +2,7 @@
 id: analytics.variant
 module: analytics
 entity: variant
-lifecycle: draft
+lifecycle: accepted
 ---
 
 ## Purpose

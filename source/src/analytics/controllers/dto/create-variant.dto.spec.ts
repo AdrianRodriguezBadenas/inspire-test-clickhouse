@@ -8,6 +8,7 @@ const validPayload = (): Record<string, unknown> => ({
   origin: 'GERMLINE',
   type: 'SNV/INDEL',
   collection: 'col-a',
+  version_date: '2024-01-01T00:00:00.000Z',
 });
 
 describe('CreateVariantDto', () => {
@@ -31,6 +32,7 @@ describe('CreateVariantDto', () => {
       origin: 'GERMLINE',
       type: 'SNV/INDEL',
       collection: 'col-a',
+      version_date: '2024-01-01T00:00:00.000Z',
     };
     const dto = plainToInstance(CreateVariantDto, payload);
 
@@ -39,6 +41,25 @@ describe('CreateVariantDto', () => {
 
     // THEN
     expect(errors.map((error) => error.property)).toContain('project_id');
+  });
+
+  // ANL-01 AC: version_date is required.
+  it('rejects a payload missing version_date', async () => {
+    // GIVEN
+    const payload = {
+      project_id: 42,
+      uri: 'urn:variant:1',
+      origin: 'GERMLINE',
+      type: 'SNV/INDEL',
+      collection: 'col-a',
+    };
+    const dto = plainToInstance(CreateVariantDto, payload);
+
+    // WHEN
+    const errors = await validate(dto);
+
+    // THEN
+    expect(errors.map((error) => error.property)).toContain('version_date');
   });
 
   // ANL-01 AC: an enumerated field outside its allowed set is rejected.

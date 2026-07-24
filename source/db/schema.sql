@@ -1,10 +1,12 @@
 -- Generated from .inspire_kb/04_domain/analytics/variant/analytics.variant.md
--- variants: annotated genomic variants. ReplacingMergeTree dedups on the
--- natural key (project_id, collection, uri), keeping the latest by created_at.
+-- variants: annotated genomic variants, append-only history.
+-- Current = greatest version_date per (project_id, collection, uri); see
+-- .inspire_kb/01_adr/adr-variant-history-current-projection.md.
 CREATE TABLE IF NOT EXISTS variants (
   `id` UUID,
   `project_id` UInt64,
   `created_at` DateTime64(3),
+  `version_date` DateTime64(3),
   `uri` String,
   `origin` LowCardinality(String),
   `type` LowCardinality(String),
@@ -291,5 +293,5 @@ CREATE TABLE IF NOT EXISTS variants (
   `extdb_gtex` Nullable(String),
   `extdb_gtex_url` Nullable(String),
   `extdb_cpic` Nullable(String)
-) ENGINE = ReplacingMergeTree(created_at)
-ORDER BY (project_id, collection, uri);
+) ENGINE = MergeTree
+ORDER BY (project_id, collection, uri, version_date);

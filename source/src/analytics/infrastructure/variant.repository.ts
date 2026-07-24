@@ -34,11 +34,23 @@ export class VariantRepository {
     });
   }
 
-  /** Retrieve one record by its generated id, or null when none matches. */
-  async findById(id: string): Promise<Variant | null> {
+  /**
+   * Retrieve the current version of one variant by its natural key, or null when
+   * none matches. Current = the row with the greatest `version_date`.
+   */
+  async findCurrent(
+    projectId: number,
+    collection: string,
+    uri: string,
+  ): Promise<Variant | null> {
     const result = await this.client.query({
-      query: `SELECT * FROM ${TABLE} FINAL WHERE id = {id:UUID} LIMIT 1`,
-      query_params: { id },
+      query: `SELECT * FROM ${TABLE}
+        WHERE project_id = {project_id:UInt64}
+          AND collection = {collection:String}
+          AND uri = {uri:String}
+        ORDER BY version_date DESC
+        LIMIT 1`,
+      query_params: { project_id: projectId, collection, uri },
       format: 'JSONEachRow',
     });
     const rows = await result.json<Variant>();
@@ -46,10 +58,10 @@ export class VariantRepository {
   }
 
   /**
-   * Read records matching the filters, ordered for stable pagination, returning
-   * at most `limit` rows starting at `offset`.
+   * Read the current version of variants matching the filters — one row per natural
+   * key (the greatest `version_date`) — returning at most `limit` rows from `offset`.
    */
-  async query(
+  async queryCurrent(
     filters: VariantFilters,
     limit: number,
     offset: number,
@@ -80,7 +92,14 @@ export class VariantRepository {
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const result = await this.client.query({
-      query: `SELECT * FROM ${TABLE} FINAL ${where} ORDER BY created_at, id LIMIT {limit:UInt32} OFFSET {offset:UInt32}`,
+      query: `SELECT * FROM (
+          SELECT * FROM ${TABLE}
+          ${where}
+          ORDER BY project_id, collection, uri, version_date DESC
+          LIMIT 1 BY (project_id, collection, uri)
+        )
+        ORDER BY project_id, collection, uri
+        LIMIT {limit:UInt32} OFFSET {offset:UInt32}`,
       query_params: params,
       format: 'JSONEachRow',
     });

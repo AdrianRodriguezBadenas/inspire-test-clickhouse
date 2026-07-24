@@ -9,6 +9,7 @@ const newVariant = (overrides: Partial<NewVariant> = {}): NewVariant => ({
   origin: 'GERMLINE',
   type: 'SNV/INDEL',
   collection: 'col-a',
+  version_date: '2024-01-01T00:00:00.000Z',
   ...overrides,
 });
 
@@ -17,6 +18,7 @@ const storedVariant = (id: string): Variant => ({
   id,
   project_id: 42,
   created_at: new Date(),
+  version_date: '2024-01-01T00:00:00.000Z',
   uri: `urn:variant:${id}`,
   origin: 'GERMLINE',
   type: 'SNV/INDEL',
@@ -52,7 +54,7 @@ describe('VariantService', () => {
     });
   });
 
-  // ANL-01 AC: the storage timestamp is set by the system, not taken from input.
+  // ANL-01 AC: the ingest timestamp is set by the system, not taken from input.
   it('sets created_at itself', async () => {
     // GIVEN
     const input = newVariant();
@@ -63,6 +65,19 @@ describe('VariantService', () => {
     // THEN
     const stored = repository.insert.mock.calls[0][0];
     expect(stored.created_at).toBeInstanceOf(Date);
+  });
+
+  // ANL-01 AC: the caller-supplied version_date is stored as given.
+  it('keeps the caller-supplied version_date', async () => {
+    // GIVEN
+    const input = newVariant({ version_date: '2023-06-15T12:00:00.000Z' });
+
+    // WHEN
+    await service.create(input);
+
+    // THEN
+    const stored = repository.insert.mock.calls[0][0];
+    expect(stored.version_date).toBe('2023-06-15T12:00:00.000Z');
   });
 
   // ANL-01 AC: a record with only the required fields is accepted; optionals empty.
@@ -80,8 +95,7 @@ describe('VariantService', () => {
     expect(stored.score).toBeUndefined();
   });
 
-  // A repository failure surfaces as a wrapped Error carrying the cause — the
-  // controller filter translates it to a clean 500.
+  // A repository failure surfaces as a wrapped Error carrying the cause.
   it('wraps a repository failure, preserving the cause', async () => {
     // GIVEN
     const dbError = new Error('clickhouse unreachable');
@@ -101,7 +115,7 @@ describe('VariantService', () => {
   it('lists with the default page size and no cursor when results fit one page', async () => {
     // GIVEN
     const rows = [storedVariant('a'), storedVariant('b')];
-    repository.query.mockResolvedValue(rows);
+    repository.queryCurrent.mockResolvedValue(rows);
 
     // WHEN
     const page = await service.list({ filters: {} });
@@ -109,7 +123,7 @@ describe('VariantService', () => {
     // THEN
     expect(page).toEqual({ items: rows, next_cursor: null });
 
-    expect(repository.query).toHaveBeenCalledWith({}, 51, 0);
+    expect(repository.queryCurrent).toHaveBeenCalledWith({}, 51, 0);
   });
 
   // ANL-02 AC: when more results remain, a next cursor is returned and the page is
@@ -117,7 +131,7 @@ describe('VariantService', () => {
   it('returns a next cursor when more results remain', async () => {
     // GIVEN — asks for 2, repository yields 3 (limit + 1) signalling more.
     const rows = [storedVariant('a'), storedVariant('b'), storedVariant('c')];
-    repository.query.mockResolvedValue(rows);
+    repository.queryCurrent.mockResolvedValue(rows);
 
     // WHEN
     const page = await service.list({ filters: {}, limit: 2 });
@@ -126,45 +140,45 @@ describe('VariantService', () => {
     expect(page.items).toEqual([rows[0], rows[1]]);
     expect(page.next_cursor).toBe(Buffer.from('2').toString('base64'));
 
-    expect(repository.query).toHaveBeenCalledWith({}, 3, 0);
+    expect(repository.queryCurrent).toHaveBeenCalledWith({}, 3, 0);
   });
 
   // ANL-02 AC: the page size is capped at 200.
   it('caps the page size at 200', async () => {
     // GIVEN
-    repository.query.mockResolvedValue([]);
+    repository.queryCurrent.mockResolvedValue([]);
 
     // WHEN
     await service.list({ filters: {}, limit: 500 });
 
     // THEN
-    expect(repository.query).toHaveBeenCalledWith({}, 201, 0);
+    expect(repository.queryCurrent).toHaveBeenCalledWith({}, 201, 0);
   });
 
   // ANL-02 AC: a cursor resumes from the encoded offset.
   it('resumes from the cursor offset', async () => {
     // GIVEN
-    repository.query.mockResolvedValue([]);
+    repository.queryCurrent.mockResolvedValue([]);
     const cursor = Buffer.from('2').toString('base64');
 
     // WHEN
     await service.list({ filters: {}, limit: 2, cursor });
 
     // THEN
-    expect(repository.query).toHaveBeenCalledWith({}, 3, 2);
+    expect(repository.queryCurrent).toHaveBeenCalledWith({}, 3, 2);
   });
 
-  // ANL-02 AC: retrieving by a missing id yields null (the controller maps to 404).
-  it('returns null when no variant matches the id', async () => {
+  // ANL-02 AC: retrieving a missing variant yields null (the controller maps to 404).
+  it('returns null when no current variant matches the natural key', async () => {
     // GIVEN
-    repository.findById.mockResolvedValue(null);
+    repository.findCurrent.mockResolvedValue(null);
 
     // WHEN
-    const result = await service.get('missing-id');
+    const result = await service.get(42, 'col-a', 'urn:missing');
 
     // THEN
     expect(result).toBeNull();
 
-    expect(repository.findById).toHaveBeenCalledWith('missing-id');
+    expect(repository.findCurrent).toHaveBeenCalledWith(42, 'col-a', 'urn:missing');
   });
 });

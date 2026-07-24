@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsArray,
+  IsDateString,
   IsIn,
   IsInt,
   IsNumber,
@@ -35,6 +36,10 @@ export class CreateVariantDto implements NewVariant {
   @ApiProperty()
   @IsString()
   collection!: string;
+
+  @ApiProperty()
+  @IsDateString()
+  version_date!: string;
 
   @ApiPropertyOptional()
   @IsOptional()

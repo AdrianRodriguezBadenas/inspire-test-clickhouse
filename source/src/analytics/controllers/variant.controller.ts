@@ -3,8 +3,6 @@ import {
   Controller,
   Get,
   NotFoundException,
-  Param,
-  ParseUUIDPipe,
   Post,
   Query,
 } from '@nestjs/common';
@@ -17,6 +15,7 @@ import {
 import { VariantService } from '../application/variant.service';
 import { Variant } from '../domain/variant';
 import { CreateVariantDto } from './dto/create-variant.dto';
+import { GetVariantDto } from './dto/get-variant.dto';
 import { ListVariantsDto } from './dto/list-variants.dto';
 import {
   CreateVariantResponseDto,
@@ -37,7 +36,7 @@ export class VariantController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List variants matching optional filters, paginated.' })
+  @ApiOperation({ summary: 'List current variants matching optional filters, paginated.' })
   @ApiOkResponse({ type: ListVariantsResponseDto })
   async list(@Query() query: ListVariantsDto): Promise<ListVariantsResponseDto> {
     const page = await this.service.list({
@@ -54,15 +53,22 @@ export class VariantController {
     return new ListVariantsResponseDto(page);
   }
 
-  @Get(':id')
-  @ApiOperation({ summary: 'Retrieve a single variant by id.' })
-  @ApiOkResponse({ description: 'The matching variant.' })
-  async get(@Param('id', ParseUUIDPipe) id: string): Promise<Variant> {
-    const variant = await this.service.get(id);
+  @Get('current')
+  @ApiOperation({
+    summary: 'Retrieve the current version of a variant by its natural key.',
+  })
+  @ApiOkResponse({ description: 'The current version of the variant.' })
+  async get(@Query() query: GetVariantDto): Promise<Variant> {
+    const variant = await this.service.get(
+      query.project_id,
+      query.collection,
+      query.uri,
+    );
     if (variant === null) {
       throw new NotFoundException({
         code: 'variant_not_found',
-        message: 'No variant found with the given id.',
+        message:
+          'No variant found for the given project, collection and uri.',
       });
     }
     return variant;

@@ -4,13 +4,13 @@ title: Realign source code to the single-table version_date variant design
 created: 2026-07-24
 updated: 2026-07-24
 reporter: "@adrian.rodriguez"
-closed_by: null
-closed_at: null
+closed_by: "@adrian.rodriguez"
+closed_at: 2026-07-24
 epic: analytics
 size: L
 importance: High
 skills: [code]
-status: Open
+status: Done
 blocked_by: []
 related_to: [TASK-f40fw3]
 ---

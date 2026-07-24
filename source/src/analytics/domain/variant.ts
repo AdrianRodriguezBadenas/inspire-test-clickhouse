@@ -12,6 +12,8 @@ export interface Variant {
   id: string;
   project_id: number;
   created_at: Date;
+  /** Caller-supplied logical version (ISO-8601). Greatest per natural key is current. */
+  version_date: string;
   uri: string;
   origin: VariantOrigin;
   type: VariantType;

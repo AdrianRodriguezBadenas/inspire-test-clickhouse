@@ -57,7 +57,7 @@ export class VariantService {
     const limit = Math.min(Math.max(input.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
     const offset = this.decodeCursor(input.cursor);
 
-    const rows = await this.repository.query(input.filters, limit + 1, offset);
+    const rows = await this.repository.queryCurrent(input.filters, limit + 1, offset);
     const hasMore = rows.length > limit;
 
     return {
@@ -66,9 +66,16 @@ export class VariantService {
     };
   }
 
-  /** Retrieve one variant by id, or null when none matches. */
-  async get(id: string): Promise<Variant | null> {
-    return this.repository.findById(id);
+  /**
+   * Retrieve the current version of one variant by its natural key, or null when
+   * none matches.
+   */
+  async get(
+    projectId: number,
+    collection: string,
+    uri: string,
+  ): Promise<Variant | null> {
+    return this.repository.findCurrent(projectId, collection, uri);
   }
 
   private encodeCursor(offset: number): string {
