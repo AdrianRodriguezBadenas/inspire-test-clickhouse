@@ -3,7 +3,7 @@ id: analytics::variant::create
 module: analytics
 entity: variant
 action: create
-lifecycle: accepted
+lifecycle: draft
 requires: []
 superseded_by: null
 ---
@@ -29,6 +29,7 @@ from input.
 | `origin` | enum | yes | One of `GERMLINE` · `SOMATIC` · `TRIO` · `PGx`. |
 | `type` | enum | yes | One of `SNV/INDEL` · `SV` · `CNV`. |
 | `collection` | string | yes | Source collection. Part of the natural key. |
+| `version_date` | timestamp | yes | Logical version; the greatest per natural key is the current record. |
 
 ## Outputs
 
@@ -48,7 +49,8 @@ other fields are taken from the input record of the same name.
 |-------|-------|------|---------|-------|
 | `id` | written | UUID | `uuid()` | Surrogate primary key; generated at insert. |
 | `project_id` | written | UInt64 | `input.project_id` | Project scope; supplied by the caller. Part of the natural key. |
-| `created_at` | written | DateTime64(3) | `now()` | Ingest timestamp; set by the system. Time-range filter target. |
+| `created_at` | written | DateTime64(3) | `now()` | Ingest timestamp; set by the system (audit). |
+| `version_date` | written | DateTime64(3) | `input.version_date` | Caller-supplied logical version. |
 | `uri` | written | String | `input.uri` | Variant URI. Part of the natural key. |
 | `origin` | written | LowCardinality(String) | `input.origin` | Enum: `GERMLINE` · `SOMATIC` · `TRIO` · `PGx`. |
 | `type` | written | LowCardinality(String) | `input.type` | Enum: `SNV/INDEL` · `SV` · `CNV`. |
@@ -341,9 +343,12 @@ other fields are taken from the input record of the same name.
    values within their enums, per the acceptance criteria of
    [[../../../03_features/analytics/ANL-01|ANL-01]].
 2. Generate `id` and set `created_at` to the current time.
-3. Persist the record. Re-inserting the same `(project_id, collection, uri)` triple
-   supersedes the prior record on merge (last write wins), per the natural-key
-   invariant of [[analytics.variant|analytics::variant]].
+3. Persist the record (append-only). The current state of the variant becomes this
+   record only if its `version_date` is the greatest for the natural key
+   `(project_id, collection, uri)`; a lower `version_date` leaves the current state
+   unchanged, per the invariants of [[analytics.variant|analytics::variant]] and the
+   realization in
+   [[../../../01_adr/adr-variant-history-current-projection|adr-variant-history-current-projection]].
 
 ## Errors
 - `missing_required_field` — operator-facing message: "A required field is missing: {field}."

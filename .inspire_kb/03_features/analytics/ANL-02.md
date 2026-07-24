@@ -3,7 +3,7 @@
 > Source: [[../../02_modules/analytics]]
 
 **Priority:** Core
-**State:** 🟢 Implemented
+**State:** 🔵 In progress
 **Dependencies:** [[ANL-01]]
 **ADRs referenced:** [[../../01_adr/adr-clickhouse-primary-database]]
 
@@ -25,10 +25,10 @@ API client — a service or analyst retrieving stored genomic variants.
 
 ## Alternative flows
 
-### AF-1: Retrieve one by identifier
+### AF-1: Retrieve the current version of one variant
 
-The client requests a single variant by its identifier. The system returns that
-record.
+The client requests a single variant by its natural key (project, collection, uri).
+The system returns the current version — the one with the greatest `version_date`.
 
 ### AF-2: No filters supplied
 
@@ -46,10 +46,10 @@ response, not an error).
 A filter references a field that does not exist. The system rejects the request
 with a validation error that names the unknown field.
 
-### EF-2: Identifier not found
+### EF-2: Variant not found
 
-A retrieve-by-identifier request names an identifier with no matching record. The
-system returns a not-found response.
+A retrieve request names a natural key with no matching record. The system returns a
+not-found response.
 
 ## Postconditions
 
@@ -64,8 +64,9 @@ system returns a not-found response.
       cursor to fetch the next page when more results exist.
 - [ ] Given a filter on a field that does not exist, the system rejects the request
       with a validation error that names the field.
-- [ ] Given an identifier, the system returns the single matching variant record.
-- [ ] Given an identifier with no matching record, the system returns a not-found
+- [ ] Given a natural key (project, collection, uri), the system returns the current
+      version of that variant — the record with the greatest `version_date`.
+- [ ] Given a natural key with no matching record, the system returns a not-found
       response.
 - [ ] Given filters that match no records, the system returns an empty page rather
       than an error.

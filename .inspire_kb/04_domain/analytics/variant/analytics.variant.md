@@ -2,7 +2,7 @@
 id: analytics.variant
 module: analytics
 entity: variant
-lifecycle: accepted
+lifecycle: draft
 ---
 
 ## Purpose
@@ -27,23 +27,28 @@ favours wide, denormalised tables over nested joins, per
 the prefix disambiguates names that recur across blocks (e.g. mapping quality
 appears in both genotype and calling-statistics).
 
-Three fields exist beyond the source document. `id` is a system-generated surrogate
-key: the source document's own key is not used for retrieval because a caller
-retrieves a stored variant by an opaque, stable id ([[analytics.variant.get|analytics::variant::get]]).
-`project_id` scopes each record to a project, making the store multi-tenant.
-`created_at` is the ingest timestamp, set by the system at insert, and is the field
-the query time-range filter operates on — there is no `updated_at` because ClickHouse
-mutations are expensive and the store is append-only, so a changed variant is a new
-insert rather than an in-place update.
+Four fields exist beyond the source document. `project_id` scopes each record to a
+project, making the store multi-tenant. `version_date` is supplied by the caller and
+is the logical version of the record: the current state of a variant is the one with
+the greatest `version_date` for its natural key, so records arriving out of order
+(e.g. from an asynchronous ingestion queue) resolve correctly regardless of arrival
+order. `created_at` is the system-set ingest timestamp, kept for audit. `id` is a
+per-record identifier. There is no `updated_at` and no in-place update: the store is
+append-only and a change is a new record with a higher `version_date` — the
+history + current-projection realization is set by
+[[../../../01_adr/adr-variant-history-current-projection|adr-variant-history-current-projection]].
 
 ## Invariants
-- `(project_id, collection, uri)` is the natural key: it uniquely identifies a
-  variant within a project. Re-inserting the same triple supersedes the prior record
-  (last write wins); the store keeps only the most recent by `created_at`.
+- `(project_id, collection, uri)` is the natural key of a variant.
+- The **current** state of a variant is the record with the greatest `version_date`
+  for its natural key. Inserting a record with a lower `version_date` never changes
+  the current state — ingestion order does not matter (out-of-order safe).
+- `version_date` is caller-supplied and is the record's logical version.
+- `created_at` is set by the system at insert (ingest audit) and never updated.
+- Rows are append-only — no field is mutated in place; a change is a new record with
+  a higher `version_date`.
+- `uri`, `origin`, `type`, `collection` and `version_date` are always present (non-null).
 - `id` is unique across all rows and immutable once set.
-- `created_at` is set by the system at insert and never updated.
-- Rows are append-only — no field is mutated in place after insert.
-- `uri`, `origin`, `type` and `collection` are always present (non-null).
 
 ## Fields
 
@@ -57,7 +62,8 @@ frequency (`popaf_`), gene (`gene_`), feature (`feat_`), external databases (`ex
 |-------|------|-------|
 | `id` | `UUID` | Surrogate primary key; generated at insert. |
 | `project_id` | `UInt64` | Project scope; supplied by the caller. Part of the natural key. |
-| `created_at` | `DateTime64(3)` | Ingest timestamp; set by the system. Time-range filter target. |
+| `created_at` | `DateTime64(3)` | Ingest timestamp; set by the system (audit). |
+| `version_date` | `DateTime64(3)` | Caller-supplied logical version; greatest per natural key is current. |
 | `uri` | `String` | Variant URI. Part of the natural key. |
 | `origin` | `LowCardinality(String)` | Enum: `GERMLINE` · `SOMATIC` · `TRIO` · `PGx`. |
 | `type` | `LowCardinality(String)` | Enum: `SNV/INDEL` · `SV` · `CNV`. |
@@ -351,4 +357,4 @@ frequency (`popaf_`), gene (`gene_`), feature (`feat_`), external databases (`ex
 |--------|-------|-------|
 | [[analytics.variant.create|analytics::variant::create]] | write | Inserts the record. |
 | [[analytics.variant.list|analytics::variant::list]] | read | Filtered, paginated list of whole records. |
-| [[analytics.variant.get|analytics::variant::get]] | read | Retrieves one whole record by `id`. |
+| [[analytics.variant.get|analytics::variant::get]] | read | Retrieves the current whole record by natural key. |

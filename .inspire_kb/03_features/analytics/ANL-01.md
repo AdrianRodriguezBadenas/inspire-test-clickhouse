@@ -3,7 +3,7 @@
 > Source: [[../../02_modules/analytics]]
 
 **Priority:** Core
-**State:** 🟢 Implemented
+**State:** 🔵 In progress
 **Dependencies:** none
 **ADRs referenced:** [[../../01_adr/adr-clickhouse-primary-database]]
 
@@ -45,19 +45,23 @@ allowed values.
 
 ## Postconditions
 
-- The record is stored and retrievable via [[ANL-02]].
-- The storage timestamp is set by the system, not supplied by the client.
+- The record is stored and its current version is retrievable via [[ANL-02]].
+- The ingest timestamp is set by the system; the logical version (`version_date`)
+  is supplied by the client.
 
 ## Acceptance criteria
 
-- [ ] Given a valid record with all required fields, the system stores it and
-      returns a confirmation identifying the stored record.
+- [ ] Given a valid record with all required fields (including `version_date`), the
+      system stores it and returns a confirmation identifying the stored record.
 - [ ] Given a record missing a required field, the system rejects it with a
       validation error that names the missing field.
 - [ ] Given an enumerated field with a value outside its allowed set, the system
       rejects it with a validation error that names the field.
 - [ ] Given a record with only the required fields, the system accepts it and
       leaves the optional fields empty.
-- [ ] The storage timestamp is set by the system at insert time and is not taken
-      from client input.
-- [ ] The insert adds a new record; it does not update or replace an existing one.
+- [ ] The ingest timestamp is set by the system at insert time and is not taken from
+      client input; the `version_date` is taken from client input.
+- [ ] The insert adds a new record; it never updates or replaces an existing one.
+- [ ] Given two records for the same `(project_id, collection, uri)`, the current
+      version is the one with the greatest `version_date`, regardless of the order in
+      which they were inserted (out-of-order safe).
