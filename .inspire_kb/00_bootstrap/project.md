@@ -1,6 +1,6 @@
 ---
 kind: bootstrap-project
-status: default          # default (seeded) → set per project via /inspire_bootstrap
+status: configured       # configured via /inspire_bootstrap init
 output_language: en      # ISO 639-1 code (or plain name) — the language ALL KB artifacts are written in
 ---
 

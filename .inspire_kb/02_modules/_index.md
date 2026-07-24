@@ -5,4 +5,4 @@ when `/inspire_module create` scaffolds a module._
 
 | Module | Prefix | Hub |
 |--------|--------|-----|
-| _e.g._ Auth | `AUTH` | [[auth]] |
+| Analytics | `ANL` | [[analytics]] |
