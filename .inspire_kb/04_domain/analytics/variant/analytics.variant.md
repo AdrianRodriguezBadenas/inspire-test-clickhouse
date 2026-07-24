@@ -78,9 +78,9 @@ frequency (`popaf_`), gene (`gene_`), feature (`feat_`), external databases (`ex
 | `ind3_zygosity` | `LowCardinality(Nullable(String))` | Zygosity ind.III (mother). |
 | `ind3_vaf` | `Nullable(Float64)` | VAF (%) ind.III. |
 | `ind3_dp` | `Nullable(Float64)` | Read depth ind.III. |
-| `pos_genome` | `String` | Reference genome (required in source). |
-| `pos_chr` | `String` | Chromosome (required in source). |
-| `pos_position` | `UInt64` | Position (required in source). |
+| `pos_genome` | `Nullable(String)` | Reference genome (required within the optional position block). |
+| `pos_chr` | `Nullable(String)` | Chromosome (required within the optional position block). |
+| `pos_position` | `Nullable(UInt64)` | Position (required within the optional position block). |
 | `pos_id` | `Nullable(String)` | Identifier. |
 | `pos_sv_end` | `Nullable(UInt64)` | SV end position. |
 | `pos_sv_len` | `Nullable(Int64)` | SV length. |

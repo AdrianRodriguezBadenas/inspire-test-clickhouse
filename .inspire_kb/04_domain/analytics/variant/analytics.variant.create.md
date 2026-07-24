@@ -69,9 +69,9 @@ other fields are taken from the input record of the same name.
 | `ind3_zygosity` | written | LowCardinality(Nullable(String)) | `input.ind3_zygosity` | Zygosity ind.III (mother). |
 | `ind3_vaf` | written | Nullable(Float64) | `input.ind3_vaf` | VAF (%) ind.III. |
 | `ind3_dp` | written | Nullable(Float64) | `input.ind3_dp` | Read depth ind.III. |
-| `pos_genome` | written | String | `input.pos_genome` | Reference genome (required in source). |
-| `pos_chr` | written | String | `input.pos_chr` | Chromosome (required in source). |
-| `pos_position` | written | UInt64 | `input.pos_position` | Position (required in source). |
+| `pos_genome` | written | Nullable(String) | `input.pos_genome` | Reference genome (required within the optional position block). |
+| `pos_chr` | written | Nullable(String) | `input.pos_chr` | Chromosome (required within the optional position block). |
+| `pos_position` | written | Nullable(UInt64) | `input.pos_position` | Position (required within the optional position block). |
 | `pos_id` | written | Nullable(String) | `input.pos_id` | Identifier. |
 | `pos_sv_end` | written | Nullable(UInt64) | `input.pos_sv_end` | SV end position. |
 | `pos_sv_len` | written | Nullable(Int64) | `input.pos_sv_len` | SV length. |
