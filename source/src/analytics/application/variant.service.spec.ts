@@ -1,5 +1,5 @@
 import { mock, MockProxy } from 'jest-mock-extended';
-import { NewVariant } from '../domain/variant';
+import { NewVariant, Variant } from '../domain/variant';
 import { VariantRepository } from '../infrastructure/variant.repository';
 import { VariantService } from './variant.service';
 
@@ -10,6 +10,17 @@ const newVariant = (overrides: Partial<NewVariant> = {}): NewVariant => ({
   type: 'SNV/INDEL',
   collection: 'col-a',
   ...overrides,
+});
+
+// A stored variant carrying only the required fields (optionals omitted).
+const storedVariant = (id: string): Variant => ({
+  id,
+  project_id: 42,
+  created_at: new Date(),
+  uri: `urn:variant:${id}`,
+  origin: 'GERMLINE',
+  type: 'SNV/INDEL',
+  collection: 'col-a',
 });
 
 describe('VariantService', () => {
@@ -84,5 +95,76 @@ describe('VariantService', () => {
       message: 'Failed to store variant',
       cause: dbError,
     });
+  });
+
+  // ANL-02 AC: default page size is 50; no more results → null cursor.
+  it('lists with the default page size and no cursor when results fit one page', async () => {
+    // GIVEN
+    const rows = [storedVariant('a'), storedVariant('b')];
+    repository.query.mockResolvedValue(rows);
+
+    // WHEN
+    const page = await service.list({ filters: {} });
+
+    // THEN
+    expect(page).toEqual({ items: rows, next_cursor: null });
+
+    expect(repository.query).toHaveBeenCalledWith({}, 51, 0);
+  });
+
+  // ANL-02 AC: when more results remain, a next cursor is returned and the page is
+  // trimmed to the requested size.
+  it('returns a next cursor when more results remain', async () => {
+    // GIVEN — asks for 2, repository yields 3 (limit + 1) signalling more.
+    const rows = [storedVariant('a'), storedVariant('b'), storedVariant('c')];
+    repository.query.mockResolvedValue(rows);
+
+    // WHEN
+    const page = await service.list({ filters: {}, limit: 2 });
+
+    // THEN
+    expect(page.items).toEqual([rows[0], rows[1]]);
+    expect(page.next_cursor).toBe(Buffer.from('2').toString('base64'));
+
+    expect(repository.query).toHaveBeenCalledWith({}, 3, 0);
+  });
+
+  // ANL-02 AC: the page size is capped at 200.
+  it('caps the page size at 200', async () => {
+    // GIVEN
+    repository.query.mockResolvedValue([]);
+
+    // WHEN
+    await service.list({ filters: {}, limit: 500 });
+
+    // THEN
+    expect(repository.query).toHaveBeenCalledWith({}, 201, 0);
+  });
+
+  // ANL-02 AC: a cursor resumes from the encoded offset.
+  it('resumes from the cursor offset', async () => {
+    // GIVEN
+    repository.query.mockResolvedValue([]);
+    const cursor = Buffer.from('2').toString('base64');
+
+    // WHEN
+    await service.list({ filters: {}, limit: 2, cursor });
+
+    // THEN
+    expect(repository.query).toHaveBeenCalledWith({}, 3, 2);
+  });
+
+  // ANL-02 AC: retrieving by a missing id yields null (the controller maps to 404).
+  it('returns null when no variant matches the id', async () => {
+    // GIVEN
+    repository.findById.mockResolvedValue(null);
+
+    // WHEN
+    const result = await service.get('missing-id');
+
+    // THEN
+    expect(result).toBeNull();
+
+    expect(repository.findById).toHaveBeenCalledWith('missing-id');
   });
 });

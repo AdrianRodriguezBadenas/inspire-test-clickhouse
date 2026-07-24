@@ -54,6 +54,14 @@ describe('Variants (e2e)', () => {
     await ch.command({ query: 'TRUNCATE TABLE variants' });
   });
 
+  const insert = async (overrides: Record<string, unknown> = {}): Promise<string> => {
+    const response = await request(app.getHttpServer())
+      .post('/variants')
+      .send(validPayload(overrides))
+      .expect(201);
+    return response.body.id as string;
+  };
+
   const selectById = async (id: string): Promise<StoredVariant[]> => {
     const result = await ch.query({
       query:
@@ -158,5 +166,103 @@ describe('Variants (e2e)', () => {
     });
     const [{ c }] = await result.json<{ c: string }>();
     expect(c).toBe('1');
+  });
+
+  // ANL-02 AC: filtered list returns only the matching records.
+  it('lists only the variants matching a filter', async () => {
+    // GIVEN
+    await insert({ uri: 'urn:a', collection: 'col-a' });
+    await insert({ uri: 'urn:b', collection: 'col-b' });
+
+    // WHEN
+    const response = await request(app.getHttpServer())
+      .get('/variants')
+      .query({ collection: 'col-a' });
+
+    // THEN
+    expect(response.status).toBe(200);
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0].uri).toBe('urn:a');
+    expect(response.body.next_cursor).toBeNull();
+  });
+
+  // ANL-02 AC: results are paginated; the cursor walks to the next page.
+  it('paginates results across pages with a cursor', async () => {
+    // GIVEN
+    await insert({ uri: 'urn:1' });
+    await insert({ uri: 'urn:2' });
+    await insert({ uri: 'urn:3' });
+
+    // WHEN
+    const page1 = await request(app.getHttpServer())
+      .get('/variants')
+      .query({ limit: 2 })
+      .expect(200);
+    const page2 = await request(app.getHttpServer())
+      .get('/variants')
+      .query({ limit: 2, cursor: page1.body.next_cursor })
+      .expect(200);
+
+    // THEN
+    expect(page1.body.items).toHaveLength(2);
+    expect(page1.body.next_cursor).toEqual(expect.any(String));
+
+    expect(page2.body.items).toHaveLength(1);
+    expect(page2.body.next_cursor).toBeNull();
+
+    const ids = [...page1.body.items, ...page2.body.items].map(
+      (item: { id: string }) => item.id,
+    );
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  // ANL-02 AC: filters that match no records yield an empty page, not an error.
+  it('returns an empty page when nothing matches', async () => {
+    // WHEN
+    const response = await request(app.getHttpServer())
+      .get('/variants')
+      .query({ collection: 'none' });
+
+    // THEN
+    expect(response.status).toBe(200);
+    expect(response.body.items).toEqual([]);
+    expect(response.body.next_cursor).toBeNull();
+  });
+
+  // ANL-02 AC: a filter on a field that does not exist is rejected.
+  it('rejects a filter on an unknown field', async () => {
+    // WHEN
+    const response = await request(app.getHttpServer())
+      .get('/variants')
+      .query({ bogus_field: 'x' });
+
+    // THEN
+    expect(response.status).toBe(400);
+  });
+
+  // ANL-02 AC: retrieve a single variant by id.
+  it('retrieves a variant by id', async () => {
+    // GIVEN
+    const id = await insert({ uri: 'urn:one' });
+
+    // WHEN
+    const response = await request(app.getHttpServer()).get(`/variants/${id}`);
+
+    // THEN
+    expect(response.status).toBe(200);
+    expect(response.body.id).toBe(id);
+    expect(response.body.uri).toBe('urn:one');
+  });
+
+  // ANL-02 AC: retrieving an unknown id returns not-found.
+  it('returns 404 for an unknown id', async () => {
+    // WHEN
+    const response = await request(app.getHttpServer()).get(
+      '/variants/00000000-0000-0000-0000-000000000000',
+    );
+
+    // THEN
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe('variant_not_found');
   });
 });

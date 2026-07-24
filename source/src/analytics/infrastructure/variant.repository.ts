@@ -6,6 +6,15 @@ import { CLICKHOUSE_CLIENT } from './clickhouse.provider';
 /** Physical table backing the variant entity. */
 const TABLE = 'variants';
 
+/** Equality/range filters a list query supports (all optional). */
+export interface VariantFilters {
+  project_id?: number;
+  collection?: string;
+  uri?: string;
+  created_from?: string;
+  created_to?: string;
+}
+
 /**
  * Data access for stored variants. Assumes valid input — validation lives in the
  * DTO / service, never here. Append-only: {@link insert} adds a row and never
@@ -23,5 +32,58 @@ export class VariantRepository {
       values: [variant],
       format: 'JSONEachRow',
     });
+  }
+
+  /** Retrieve one record by its generated id, or null when none matches. */
+  async findById(id: string): Promise<Variant | null> {
+    const result = await this.client.query({
+      query: `SELECT * FROM ${TABLE} FINAL WHERE id = {id:UUID} LIMIT 1`,
+      query_params: { id },
+      format: 'JSONEachRow',
+    });
+    const rows = await result.json<Variant>();
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Read records matching the filters, ordered for stable pagination, returning
+   * at most `limit` rows starting at `offset`.
+   */
+  async query(
+    filters: VariantFilters,
+    limit: number,
+    offset: number,
+  ): Promise<Variant[]> {
+    const conditions: string[] = [];
+    const params: Record<string, unknown> = { limit, offset };
+
+    if (filters.project_id !== undefined) {
+      conditions.push('project_id = {project_id:UInt64}');
+      params.project_id = filters.project_id;
+    }
+    if (filters.collection !== undefined) {
+      conditions.push('collection = {collection:String}');
+      params.collection = filters.collection;
+    }
+    if (filters.uri !== undefined) {
+      conditions.push('uri = {uri:String}');
+      params.uri = filters.uri;
+    }
+    if (filters.created_from !== undefined) {
+      conditions.push('created_at >= {created_from:DateTime64(3)}');
+      params.created_from = filters.created_from;
+    }
+    if (filters.created_to !== undefined) {
+      conditions.push('created_at <= {created_to:DateTime64(3)}');
+      params.created_to = filters.created_to;
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const result = await this.client.query({
+      query: `SELECT * FROM ${TABLE} FINAL ${where} ORDER BY created_at, id LIMIT {limit:UInt32} OFFSET {offset:UInt32}`,
+      query_params: params,
+      format: 'JSONEachRow',
+    });
+    return result.json<Variant>();
   }
 }
