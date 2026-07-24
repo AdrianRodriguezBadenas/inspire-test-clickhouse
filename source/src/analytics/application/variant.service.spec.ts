@@ -68,4 +68,21 @@ describe('VariantService', () => {
     const stored = repository.insert.mock.calls[0][0];
     expect(stored.score).toBeUndefined();
   });
+
+  // A repository failure surfaces as a wrapped Error carrying the cause — the
+  // controller filter translates it to a clean 500.
+  it('wraps a repository failure, preserving the cause', async () => {
+    // GIVEN
+    const dbError = new Error('clickhouse unreachable');
+    repository.insert.mockRejectedValue(dbError);
+
+    // WHEN
+    const act = service.create(newVariant());
+
+    // THEN
+    await expect(act).rejects.toMatchObject({
+      message: 'Failed to store variant',
+      cause: dbError,
+    });
+  });
 });

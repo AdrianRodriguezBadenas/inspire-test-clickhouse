@@ -23,7 +23,11 @@ export class VariantService {
       created_at: new Date(),
     };
 
-    await this.repository.insert(variant);
+    try {
+      await this.repository.insert(variant);
+    } catch (error) {
+      throw new Error('Failed to store variant', { cause: error });
+    }
 
     return { id: variant.id };
   }

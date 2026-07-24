@@ -1,10 +1,11 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ClickHouseClient, createClient } from '@clickhouse/client';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { configureApp } from '../src/app.setup';
 
 const CLICKHOUSE_URL = process.env.CLICKHOUSE_URL ?? 'http://localhost:8123';
 
@@ -40,13 +41,7 @@ describe('Variants (e2e)', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
+    configureApp(app);
     await app.init();
   });
 
@@ -96,7 +91,7 @@ describe('Variants (e2e)', () => {
     ]);
   });
 
-  // ANL-01 AC: a record missing a required field is rejected.
+  // ANL-01 AC: a record missing a required field is rejected, naming the field.
   it('rejects an insert missing a required field', async () => {
     // GIVEN
     const payload = validPayload();
@@ -109,6 +104,8 @@ describe('Variants (e2e)', () => {
 
     // THEN
     expect(response.status).toBe(400);
+    expect(response.body.code).toBe('missing_required_field');
+    expect(response.body.fields).toContain('project_id');
   });
 
   // ANL-01 AC: an enumerated field outside its allowed set is rejected.
@@ -123,6 +120,23 @@ describe('Variants (e2e)', () => {
 
     // THEN
     expect(response.status).toBe(400);
+    expect(response.body.code).toBe('invalid_enum_value');
+    expect(response.body.fields).toContain('origin');
+  });
+
+  // ANL-01 AC: the storage timestamp is set by the system, not taken from input.
+  it('rejects an insert that supplies created_at', async () => {
+    // GIVEN
+    const payload = validPayload({ created_at: '2020-01-01T00:00:00.000Z' });
+
+    // WHEN
+    const response = await request(app.getHttpServer())
+      .post('/variants')
+      .send(payload);
+
+    // THEN
+    expect(response.status).toBe(400);
+    expect(response.body.fields).toContain('created_at');
   });
 
   // Entity invariant: (project_id, collection, uri) is the natural key —
