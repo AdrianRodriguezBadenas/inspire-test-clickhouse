@@ -17,5 +17,7 @@ export const clickhouseProvider: Provider = {
       username: process.env.CLICKHOUSE_USER ?? 'default',
       password: process.env.CLICKHOUSE_PASSWORD ?? '',
       database: process.env.CLICKHOUSE_DATABASE ?? 'default',
+      // Accept ISO-8601 timestamps (JS Date serialization) for DateTime columns.
+      clickhouse_settings: { date_time_input_format: 'best_effort' },
     }),
 };
