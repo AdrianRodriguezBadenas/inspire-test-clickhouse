@@ -68,10 +68,17 @@ guaranteed. Primary key: `ORDER BY (project_id, collection, uri, version_date)` 
 cases where they are present and complete the natural key for dedup / `get`;
 `version_date` last makes latest-version selection cheap.
 
-`PARTITION BY toYYYYMM(version_date)` for data management / TTL only (not for query
-pruning). **Not** `PARTITION BY project_id` (one giant partition for the dominant
-project) and **not** by `collection` (~4000 studies in one project → too many
-partitions).
+**No partitioning initially.** Queries never filter by date, so partitioning by
+`version_date` would give no pruning while fragmenting each variant's versions across
+time-partitions — which hurts exactly the natural-key access (`get`, dedup, and
+comparing an old version against the current one). Unpartitioned, all versions of a
+natural key stay contiguous in the ORDER BY, so cross-version comparison is a
+contiguous scan. `PARTITION BY project_id` is also rejected (one giant partition for
+the dominant project; potentially thousands of projects) and `collection` (~4000
+studies → too many partitions). Partitioning in ClickHouse is for data
+management/TTL, not query pruning — revisit only if a retention policy emerges (then
+a coarse `toYear(version_date)` partition or row/column `TTL`, weighing the
+version-fragmentation cost).
 
 Worst case: the dominant project (~318M rows, ~4000 studies) queried with only
 `project_id` and open filters prunes to ~318M rows. This is squarely ClickHouse's
