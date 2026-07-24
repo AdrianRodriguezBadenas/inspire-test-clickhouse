@@ -3,7 +3,7 @@
 > Source: [[../../02_modules/analytics]]
 
 **Priority:** Core
-**State:** 🟡 Planned
+**State:** 🟢 Implemented
 **Dependencies:** [[ANL-01]]
 **ADRs referenced:** [[../../01_adr/adr-clickhouse-primary-database]]
 

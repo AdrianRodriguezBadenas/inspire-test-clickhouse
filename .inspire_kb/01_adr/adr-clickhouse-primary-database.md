@@ -1,7 +1,11 @@
 # ClickHouse as the primary database
 
-**Status:** design
+**Status:** implemented
 **Modules affected:** cross-cutting — every module that persists or queries data
+**Implemented in:** `source/` — the analytics module accesses ClickHouse via
+`@clickhouse/client` (`src/analytics/infrastructure/`); the `variants` table DDL
+lives at `source/db/schema.sql`, and a local ClickHouse runs via
+`source/docker-compose.yml`.
 <!-- Status maturity ladder: design | prototyped | implemented | superseded by [[x]] | rejected.
      design = the design workspace (features + screen spec + horizontal prototype + specs).
      prototyped = validated in an EXTERNAL functional prototype (a vertical spike repo,

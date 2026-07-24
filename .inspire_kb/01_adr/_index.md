@@ -7,7 +7,7 @@ cross-cutting decisions under *Transversales*.
 
 | ADR | Title | Status |
 |-----|-------|--------|
-| [[adr-clickhouse-primary-database]] | ClickHouse as the primary database | design |
+| [[adr-clickhouse-primary-database]] | ClickHouse as the primary database | implemented |
 
 ## Superseded
 

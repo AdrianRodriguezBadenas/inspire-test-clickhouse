@@ -3,7 +3,7 @@ id: analytics::variant::create
 module: analytics
 entity: variant
 action: create
-lifecycle: draft
+lifecycle: accepted
 requires: []
 superseded_by: null
 ---
