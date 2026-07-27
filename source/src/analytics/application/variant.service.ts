@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { NewVariant, Variant } from '../domain/variant';
 import { VariantQuery } from '../domain/variant-query';
+import { assertQueryWithinLimits } from '../domain/variant-query.limits';
 import { VariantRepository } from '../infrastructure/variant.repository';
 
 const DEFAULT_LIMIT = 50;
@@ -45,8 +46,14 @@ export class VariantService {
   /**
    * Query the current variants matching the structured query. `limit` defaults to
    * 50 and is capped at 200; `next_cursor` is non-null when more results remain.
+   *
+   * The size guard runs here rather than in a transport adapter so every access
+   * route (REST, GraphQL) rejects an oversized tree identically, before any data
+   * is read.
    */
   async query(input: VariantQuery): Promise<VariantPage> {
+    assertQueryWithinLimits(input.where);
+
     const limit = Math.min(Math.max(input.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
     const offset = this.decodeCursor(input.cursor);
 

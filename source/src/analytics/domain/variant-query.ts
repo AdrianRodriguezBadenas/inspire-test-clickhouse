@@ -72,7 +72,8 @@ export interface VariantQuery {
 export type QueryErrorCode =
   | 'unknown_query_field'
   | 'unknown_query_operator'
-  | 'invalid_query';
+  | 'invalid_query'
+  | 'query_too_complex';
 
 /**
  * A client-facing query-validation failure. Thrown by the translator; the HTTP

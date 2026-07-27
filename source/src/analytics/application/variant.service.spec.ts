@@ -1,5 +1,7 @@
 import { mock, MockProxy } from 'jest-mock-extended';
 import { NewVariant, Variant } from '../domain/variant';
+import { Condition, QueryValidationError } from '../domain/variant-query';
+import { MAX_CONDITION_DEPTH } from '../domain/variant-query.limits';
 import { VariantRepository } from '../infrastructure/variant.repository';
 import { VariantService } from './variant.service';
 
@@ -166,5 +168,23 @@ describe('VariantService', () => {
 
     // THEN
     expect(repository.queryCurrent).toHaveBeenCalledWith(undefined, undefined, 3, 2);
+  });
+
+  // ANL-02 AC: a query nested beyond the permitted depth is rejected before any
+  // data is read. Enforced here, in the one place both access routes share.
+  it('rejects an over-nested query before reading any data', async () => {
+    // GIVEN
+    let where: Condition = { field: 'project_id', op: 'eq', value: 42 };
+    for (let i = 0; i < MAX_CONDITION_DEPTH; i++) {
+      where = { and: [where] };
+    }
+
+    // WHEN
+    const act = () => service.query({ where });
+
+    // THEN
+    await expect(act).rejects.toThrow(QueryValidationError);
+
+    expect(repository.queryCurrent).not.toHaveBeenCalled();
   });
 });
