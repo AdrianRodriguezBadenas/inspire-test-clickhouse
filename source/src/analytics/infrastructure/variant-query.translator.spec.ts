@@ -1,4 +1,4 @@
-import { QueryValidationError } from '../domain/variant-query';
+import { Condition, QueryValidationError } from '../domain/variant-query';
 import { translateOrderBy, translateWhere } from './variant-query.translator';
 
 describe('translateWhere', () => {
@@ -111,6 +111,72 @@ describe('translateWhere', () => {
     } catch (error) {
       expect((error as QueryValidationError).code).toBe('invalid_query');
     }
+  });
+});
+
+describe('translateWhere with class-instance conditions', () => {
+  // A GraphQL input arrives as a class instance carrying every declared property,
+  // `undefined` where the client omitted it. Node-type discrimination must look at
+  // the value, not at key presence, or a leaf reads as an `and` node — which broke
+  // REST/GraphQL parity.
+  class ConditionInstance {
+    and?: unknown;
+    or?: unknown;
+    not?: unknown;
+    field?: string;
+    op?: string;
+    value?: unknown;
+
+    constructor(fields: Partial<ConditionInstance>) {
+      Object.assign(this, fields);
+    }
+  }
+
+  it('treats an instance with undefined and/or/not as a leaf', () => {
+    // GIVEN
+    const where = new ConditionInstance({
+      field: 'collection',
+      op: 'eq',
+      value: 'col-a',
+    });
+
+    // WHEN
+    const { sql, params } = translateWhere(where as unknown as Condition);
+
+    // THEN
+    expect(sql).toBe('`collection` = {p0:String}');
+    expect(params).toEqual({ p0: 'col-a' });
+  });
+
+  it('treats an instance with a populated `and` as a boolean node', () => {
+    // GIVEN
+    const where = new ConditionInstance({
+      and: [
+        new ConditionInstance({ field: 'project_id', op: 'eq', value: 42 }),
+        new ConditionInstance({ field: 'collection', op: 'eq', value: 'col-a' }),
+      ],
+    });
+
+    // WHEN
+    const { sql, params } = translateWhere(where as unknown as Condition);
+
+    // THEN
+    expect(sql).toBe('(`project_id` = {p0:UInt64} AND `collection` = {p1:String})');
+    expect(params).toEqual({ p0: 42, p1: 'col-a' });
+  });
+
+  it('treats an instance with a populated `not` as a negation', () => {
+    // GIVEN
+    const where = new ConditionInstance({
+      not: new ConditionInstance({ field: 'score', op: 'gte', value: 15 }),
+    });
+
+    // WHEN
+    const { sql, params } = translateWhere(where as unknown as Condition);
+
+    // THEN
+    expect(sql).toBe('(NOT `score` >= {p0:Float64})');
+    expect(params).toEqual({ p0: 15 });
   });
 });
 

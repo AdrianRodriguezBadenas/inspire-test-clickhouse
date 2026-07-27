@@ -139,9 +139,14 @@ function translateCondition(cond: Condition, bag: ParamBag): string {
     throw new QueryValidationError('invalid_query', 'Malformed condition.');
   }
 
-  if ('and' in cond || 'or' in cond) {
-    const key = 'and' in cond ? 'and' : 'or';
-    const children = (cond as Record<string, unknown>)[key];
+  // Discriminate on the VALUE, not on key presence: a GraphQL input arrives as a
+  // class instance carrying every declared property (`and`, `or`, `not`, …) with
+  // `undefined` where the client omitted it, so `'and' in cond` would match a leaf.
+  // A REST body, being plain JSON, only carries the keys actually sent — checking
+  // the value is what makes both routes take the same branch.
+  if (cond.and !== undefined || cond.or !== undefined) {
+    const key = cond.and !== undefined ? 'and' : 'or';
+    const children = cond[key];
     if (!Array.isArray(children) || children.length === 0) {
       throw new QueryValidationError(
         'invalid_query',
@@ -154,8 +159,8 @@ function translateCondition(cond: Condition, bag: ParamBag): string {
       .join(joiner)})`;
   }
 
-  if ('not' in cond) {
-    return `(NOT ${translateCondition((cond as NotShape).not, bag)})`;
+  if (cond.not !== undefined) {
+    return `(NOT ${translateCondition(cond.not as Condition, bag)})`;
   }
 
   const leaf = cond as { field?: unknown; op?: unknown; value?: unknown };
@@ -172,10 +177,6 @@ function translateCondition(cond: Condition, bag: ParamBag): string {
     );
   }
   return translateLeaf(leaf.field, leaf.op as QueryOperator, leaf.value, bag);
-}
-
-interface NotShape {
-  not: Condition;
 }
 
 /** Translate an optional condition tree to a parameterized WHERE fragment. */
