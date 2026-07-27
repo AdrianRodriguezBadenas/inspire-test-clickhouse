@@ -3,9 +3,9 @@
 > Source: [[../../02_modules/analytics]]
 
 **Priority:** Core
-**State:** 🟢 Implemented
+**State:** 🔵 In progress
 **Dependencies:** [[ANL-01]]
-**ADRs referenced:** [[../../01_adr/adr-clickhouse-primary-database]], [[../../01_adr/adr-variant-history-current-projection]], [[../../01_adr/adr-variant-structured-query]]
+**ADRs referenced:** [[../../01_adr/adr-clickhouse-primary-database]], [[../../01_adr/adr-variant-history-current-projection]], [[../../01_adr/adr-variant-structured-query]], [[../../01_adr/adr-graphql-query-transport]]
 
 ## Actor
 
@@ -17,8 +17,8 @@ API client — a service or analyst querying stored genomic variants.
 
 ## Main flow
 
-1. The client queries variants, optionally supplying filter criteria and a page
-   size / cursor.
+1. The client queries variants through any of the available access routes,
+   optionally supplying filter criteria and a page size / cursor.
 2. The system validates the filters.
 3. The system returns the matching **current** variants (one per natural key — the
    greatest `version_date`) as a paginated page, with a cursor to fetch the next
@@ -65,10 +65,23 @@ a validation error that names the unknown field.
 - [ ] Given filters that match no records, the system returns an empty page rather
       than an error.
 - [ ] The request does not modify any stored data.
+- [ ] The same logical query returns the same records, in the same order, with
+      equivalent paging, regardless of which access route the client uses.
+- [ ] A rejected query is rejected identically on every access route: the same
+      condition produces the same validation error naming the same field or operator.
+- [ ] A query nested beyond the permitted depth or complexity is rejected before any
+      data is read.
 
 ## Notes
 
 The query is a **structured condition tree** (`and`/`or`/`not` + `{field, op, value}`
-leaves) sent to `POST /variants/query`, translated to parameterized ClickHouse — see
-[[../../01_adr/adr-variant-structured-query]]. Transport moves to GraphQL in a later
-iteration (same logical contract) — tracked in the tracker.
+leaves), translated to parameterized ClickHouse — see
+[[../../01_adr/adr-variant-structured-query]].
+
+Two access routes serve this one contract, permanently and by choice: the REST
+`POST /variants/query` (kept for its Swagger surface, used for manual testing) and a
+**read-only GraphQL** surface exposing the same tree as typed input types — see
+[[../../01_adr/adr-graphql-query-transport]]. Both are thin adapters over a single
+service, which is what makes the parity criteria above meaningful rather than
+aspirational. The GraphQL route is the remaining work on this feature (tracked in
+[[../../99_tracker/tickets/TASK-j01pke|TASK-j01pke]]); the REST route is done.

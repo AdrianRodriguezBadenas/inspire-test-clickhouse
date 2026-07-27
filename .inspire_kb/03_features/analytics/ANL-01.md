@@ -2,10 +2,17 @@
 
 > Source: [[../../02_modules/analytics]]
 
-**Priority:** Core
+**Priority:** Important
 **State:** 🟢 Implemented
 **Dependencies:** none
 **ADRs referenced:** [[../../01_adr/adr-clickhouse-primary-database]]
+
+> ⚠️ **Test-only path — not how variants are written in production.** Production
+> ingest is **file-based bulk loading**: ClickHouse produces one part per insert, so
+> writing variants one record at a time does not scale. This single-record insert
+> exists to exercise and test the store, and is not to be grown into the real ingest
+> path. That path is unspecified — see
+> [[../../99_tracker/tickets/TASK-2mf2yu|TASK-2mf2yu]].
 
 ## Actor
 
@@ -65,3 +72,16 @@ allowed values.
 - [ ] Given two records for the same `(project_id, collection, uri)`, the current
       version is the one with the greatest `version_date`, regardless of the order in
       which they were inserted (out-of-order safe).
+
+## Notes
+
+The validation rules above (required fields, enumerated values, system-set ingest
+timestamp, client-supplied `version_date`) are the substantive part of this feature
+and must carry over to the production file-based ingest path — explicitly, as the
+same rules or as a stated deviation. Only the single-record transport is provisional;
+the record contract is not. See
+[[../../99_tracker/tickets/TASK-2mf2yu|TASK-2mf2yu]].
+
+No GraphQL mutation is planned for this insert — the read surface is deliberately
+read-only ([[../../01_adr/adr-graphql-query-transport]]), since exposing a write here
+would advertise a path the product does not intend to have.

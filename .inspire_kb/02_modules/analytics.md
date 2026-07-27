@@ -10,9 +10,14 @@ prefix: ANL              # the module's feature / use-case ID prefix
 
 ## Overview
 
-Stores annotated genomic variants in ClickHouse and exposes an API to insert and
-query them — inserting variant records, listing them filtered and paginated, and
-retrieving a single record by identifier.
+Stores annotated genomic variants in ClickHouse and exposes a read API over them —
+structured, filtered, paginated queries returning only current versions, served over
+both REST and GraphQL.
+
+Writes are asymmetric with reads, deliberately: the production ingest path is
+**file-based bulk loading** (unspecified so far — see
+[[../99_tracker/tickets/TASK-2mf2yu|TASK-2mf2yu]]), and the single-record insert in
+[[../03_features/analytics/ANL-01|ANL-01]] is a test-only convenience.
 
 ## Relationships
 
@@ -24,7 +29,8 @@ first module of the product.
 
 _Index of the features in [`../03_features/analytics/`](../03_features/analytics):_
 
-- [[../03_features/analytics/ANL-01|ANL-01]] — Insert a variant record into the store.
+- [[../03_features/analytics/ANL-01|ANL-01]] — Insert a variant record into the store
+  (⚠️ test-only; not the production write path).
 - [[../03_features/analytics/ANL-02|ANL-02]] — Query variants (filtered paginated
   list + retrieve one by identifier).
 
@@ -43,5 +49,8 @@ documents for this module._
 
 _Decisions scoped to this module (`adr-ANL-*` in [`../01_adr/`](../01_adr)):_
 
-- _None yet. Cross-cutting: [[../01_adr/adr-clickhouse-primary-database]] — the
-  database this module queries._
+- _None yet. Cross-cutting:_ [[../01_adr/adr-clickhouse-primary-database]] — the
+  database this module queries · [[../01_adr/adr-variant-history-current-projection]]
+  — append-only history, current-only reads ·
+  [[../01_adr/adr-variant-structured-query]] — the query AST ·
+  [[../01_adr/adr-graphql-query-transport]] — GraphQL alongside REST for reads.
