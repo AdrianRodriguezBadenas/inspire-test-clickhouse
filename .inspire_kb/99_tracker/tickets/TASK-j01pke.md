@@ -49,10 +49,41 @@ whitelist) and translated to parameterized ClickHouse behind the repository. Rec
 in [[adr-variant-structured-query]]; realizes ANL-02 (`analytics::variant::query`).
 **Remaining: the GraphQL transport migration** (same AST as the logical contract).
 
+## Progress (2026-07-27) — GraphQL transport specified
+
+Scope of the remaining work settled and recorded in
+[[adr-graphql-query-transport]]. Two corrections to the original framing:
+
+- **GraphQL is additive, not a migration.** REST stays indefinitely — the operator
+  uses its Swagger surface for manual testing. There is no deprecation to plan, and
+  the permanent cost is keeping two surfaces in parity (mitigated by both being thin
+  adapters over one service, plus a required parity test).
+- **Read-only — no mutation.** Production writes will be file-based bulk ingest, not
+  API calls; the `POST /variants` insert is test-only. Filed as [[TASK-2mf2yu]], and
+  [[ANL-01]] now says so.
+
+Shape decided: recursive typed input types, with the field and operator allow-lists
+promoted to schema enums **derived from** the existing validator's list (not copied —
+two hand-maintained copies of a security boundary drift). Code-first NestJS.
+
+New constraint surfaced while specifying: a recursive input type accepts unbounded
+nesting, so depth/complexity caps and disabled production introspection are part of
+the work, not follow-ups. [[ANL-02]] carries acceptance criteria for parity and for
+depth rejection; its state moved to 🔵 In progress.
+
 ## Acceptance criteria
 
 - [x] Query approach chosen and recorded in an ADR ([[adr-variant-structured-query]]).
 - [x] Public query contract defined independently of the database engine (the AST).
 - [x] ClickHouse reachable only behind a translation layer the contract does not
       depend on (`variant-query.translator`).
-- [ ] GraphQL transport exposing the same query contract.
+- [x] GraphQL transport approach specified and recorded in an ADR
+      ([[adr-graphql-query-transport]]).
+- [ ] GraphQL read surface implemented, exposing the same query contract as REST.
+- [ ] `VariantField` / `VariantOperator` enums derived from the existing allow-list,
+      with no second hand-maintained copy.
+- [ ] Query depth + complexity limits enforced; introspection disabled outside
+      development.
+- [ ] Parity test: the same logical query returns the same result — and the same
+      validation errors — through REST and GraphQL.
+- [ ] REST + Swagger still working, unchanged.
