@@ -23,5 +23,11 @@ export function graphqlConfig(env: NodeJS.ProcessEnv = process.env): ApolloDrive
     // Fails closed: only an explicit development environment opens the schema up.
     // `npm run start:dev` sets it; a deployment that sets nothing stays closed.
     introspection: env.NODE_ENV === 'development',
+    // Never, in any environment. Apollo would otherwise attach a `stacktrace`
+    // extension to every error whenever NODE_ENV is neither 'production' nor 'test' —
+    // so staging, and any deployment that sets nothing, would answer clients with
+    // absolute file paths and internal frames. The stack belongs in the server log,
+    // which is where `AppExceptionFilter` puts it.
+    includeStacktraceInErrorResponses: false,
   };
 }

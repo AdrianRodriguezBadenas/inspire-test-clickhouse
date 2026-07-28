@@ -184,8 +184,10 @@ describe('Variant query parity across access routes (e2e)', () => {
       expect(rest.body.code).toBe('invalid_query_condition');
       expect(rest.body.message).toBe('Operator is_null takes no value.');
 
-      expect(graphql.errors[0].extensions.code).toBe('invalid_query_condition');
       expect(graphql.errors[0].message).toBe('Operator is_null takes no value.');
+      // The whole extensions object, not just the code: Apollo would otherwise be free
+      // to attach a `stacktrace` here, which is a leak the config forbids outright.
+      expect(graphql.errors[0].extensions).toEqual({ code: 'invalid_query_condition' });
     });
 
     it('is rejected on both routes when nested beyond the permitted depth', async () => {

@@ -25,6 +25,21 @@ describe('graphqlConfig', () => {
     expect(config.introspection).toBe(false);
   });
 
+  it.each([['development'], ['test'], ['staging'], ['production']])(
+    'never puts a stacktrace in an error response, not even in %s',
+    (nodeEnv) => {
+      const config = graphqlConfig({ NODE_ENV: nodeEnv });
+
+      expect(config.includeStacktraceInErrorResponses).toBe(false);
+    },
+  );
+
+  it('never puts a stacktrace in an error response when the environment says nothing', () => {
+    const config = graphqlConfig({});
+
+    expect(config.includeStacktraceInErrorResponses).toBe(false);
+  });
+
   it('never serves the playground', () => {
     const config = graphqlConfig({ NODE_ENV: 'development' });
 
