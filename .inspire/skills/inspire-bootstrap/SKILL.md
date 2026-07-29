@@ -129,6 +129,31 @@ generic coding-stage checks. After confirming the layers:
    the coding stage starts stack-aware. Framework conventions only — org policy
    (branch naming, private registries, CI) stays in the project's `CLAUDE.md`.
 
+### Quality gates (installed with the stack)
+
+A project's gates are part of its foundation, not an afterthought: what the operator
+stops reading, a machine has to start checking
+([`_references/quality-gates.md`](../_references/quality-gates.md)). Once the layers
+and `profiles:` are confirmed:
+
+1. **Install the in-repo gates** listed in each resolved profile's `## Quality gates`
+   — the lint rules, the test-runner thresholds, and the CI job that runs them. New rules go in **absolute**; a rule the existing code
+   cannot satisfy yet enters scoped or ratcheted with a `/inspire_task` ticket for the
+   cleanup. Never dropped silently. On a greenfield project the escape-hatch ceiling is
+   seeded at **zero** — the only moment it is free.
+2. **Declare the external gate** in `stack.md` — which service keeps the history of
+   the aggregate metrics (coverage, duplication, bundle size), since the runtime must
+   not store that baseline in the repository it is judging. Record it; the in-repo bridge (CI
+   job, reporter config) is installed and validated, the service itself is not
+   provisioned here.
+3. **Hand the far side to the operator, once.** Print a short checklist with a human
+   owner: protect the default branch so a failing check blocks a merge, and confirm
+   the external service's own pass condition is strict. These sit outside every
+   skill's reach — surface them, never report them as done.
+
+An existing codebase that predates its gates is not this subcommand's problem: that
+is a coding-stage job, brought up to standard from `source/` rather than scaffolded.
+
 ## Subcommand: theme
 
 Define or update `theme.md` — the design system. The token **roles** (primary,
@@ -276,6 +301,10 @@ writes its KB artifacts in (`project.md` frontmatter `output_language`; default
    accent, status keys) — keep them stable even when values change.
 5. **Consult the task tracker** (`/inspire_task list`) for tracked
    bootstrap work.
+6. **Gates ship with the stack.** `stack` installs the in-repo quality gates from the
+   resolved profiles and declares the external one; the server-side half is a one-time
+   operator checklist, never reported as done. See
+   [`_references/quality-gates.md`](../_references/quality-gates.md).
 
 ## Related skills
 
