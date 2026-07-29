@@ -146,10 +146,11 @@ and `profiles:` are confirmed:
    not store that baseline in the repository it is judging. Record it; the in-repo bridge (CI
    job, reporter config) is installed and validated, the service itself is not
    provisioned here.
-3. **Hand the far side to the operator, once.** Print a short checklist with a human
-   owner: protect the default branch so a failing check blocks a merge, and confirm
-   the external service's own pass condition is strict. These sit outside every
-   skill's reach — surface them, never report them as done.
+3. **Hand the far side to the operator as a ticket** (`/inspire_task create`, not a
+   printed checklist — that dies with the session): protect the default branch so a
+   failing check blocks a merge, and confirm the external service's own pass condition
+   is strict. These sit outside every skill's reach; the ticket keeps a half-installed
+   gate visible until a human closes it. Never reported as done.
 
 An existing codebase that predates its gates is not this subcommand's problem: that
 is a coding-stage job, brought up to standard from `source/` rather than scaffolded.
@@ -302,8 +303,9 @@ writes its KB artifacts in (`project.md` frontmatter `output_language`; default
 5. **Consult the task tracker** (`/inspire_task list`) for tracked
    bootstrap work.
 6. **Gates ship with the stack.** `stack` installs the in-repo quality gates from the
-   resolved profiles and declares the external one; the server-side half is a one-time
-   operator checklist, never reported as done. See
+   resolved profiles and records the project's answers under `stack.md`'s
+   `## Quality gates`; the server-side half becomes a tracker ticket with a human
+   owner, never reported as done. See
    [`_references/quality-gates.md`](../_references/quality-gates.md).
 
 ## Related skills

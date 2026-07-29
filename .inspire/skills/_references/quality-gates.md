@@ -106,12 +106,16 @@ three moves, and no more:
    registry already records environment choices the runtime does not provision.
 2. **Install and validate the in-repo bridge** — the CI workflow, the reporter
    config. That part *is* a versioned file and is owned like any other.
-3. **Hand the far side to a human, once** — a setup checklist item with a human
-   owner, surfaced at bootstrap. Not a validator, not an agent's job, and never
-   reported as done.
+3. **Hand the far side to a human, as a ticket** — `/inspire_task create`, with the
+   human owner and the concrete acts named (protect the branch so a red check blocks
+   the merge; make the service's own pass condition strict). Not a validator, not an
+   agent's job, and never reported as done.
 
 Step 3 is load-bearing, not paperwork: a flawless CI workflow protects nothing if the
-default branch accepts a red check.
+default branch accepts a red check. And it is a **ticket, not a printed checklist** —
+a checklist that exists only in a session's output dies with the session, which is the
+same pretending this rule forbids, committed by the rule itself. A half-installed gate
+has to stay visible until a human closes it.
 
 ## Who reads this
 

@@ -14,7 +14,10 @@ reads before working — the base context the rest of the KB assumes.
     runtimes, frameworks, the shared component layer, data/messaging, the
     prototype's mock-data stack, plus how the product is laid out
     (frontend / backend / monorepo · web / mobile · database provisioning +
-    local dev DB). What the product is built with.
+    local dev DB). What the product is built with — and, under
+    `## Quality gates`, the mechanical checks it is trusted through: which are
+    in-repo, which service holds the aggregate history (the runtime declares it,
+    never provisions it), and which rules were deliberately dropped, with why.
   - [`theme.md`](theme.md) — the **default design-system template**: fonts, the
     color palette + status map, density and layout tokens. At install it is copied
     to [`05_screens/design-system.md`](../05_screens) (the project's live design
