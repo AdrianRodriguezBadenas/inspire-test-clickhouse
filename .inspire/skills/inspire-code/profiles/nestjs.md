@@ -85,9 +85,10 @@ is written down, never silently missing):
   `no-unlimited-disable` · `no-unused-disable` — a suppression must name its rule and
   say why, and a stale one is an error rather than a fossil.
 - The repo-wide count of suppressions plus `as any` / `as unknown as` / `x!` is
-  **ratcheted in-repo** (a committed ceiling, checked by the pre-commit / CI job) —
-  the one baseline Rule 3 allows inside the repository, because a suppression is source
-  text and the ceiling bump shows up in the same diff.
+  **ratcheted in-repo** — the one baseline Rule 3 allows inside the repository, because a
+  suppression is source text and the ceiling bump shows up in the same diff. Patterns and
+  ceilings go in `.escape-hatches.json`; enforced by `.claude/bin/escape-hatch-ratchet.sh`
+  from `pre-commit`.
 
 Test-file relaxations are enumerated **per rule with a written reason** — the
 `any`-safety rules at untyped HTTP/GraphQL response boundaries are the legitimate

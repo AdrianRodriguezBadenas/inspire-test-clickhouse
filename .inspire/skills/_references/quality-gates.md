@@ -92,8 +92,17 @@ not of the text), which is why its history has to live outside.
 
 What the ratchet buys is adoption on contaminated ground: nobody has to clean up today,
 nobody may make it worse tomorrow, and every opportunistic fix is locked in. What it
-does not buy is silence — a ratchet at its ceiling **blocks**, and the cleanup is a
-`/inspire_task` ticket, never a line in a log someone reads later.
+does not buy is silence — **exceeding** the ceiling blocks the commit (sitting at it is
+the normal resting state, not a failure), and the cleanup is a `/inspire_task` ticket,
+never a line in a log someone reads later.
+
+Tooling: [`escape-hatch-ratchet.sh`](../../bin/escape-hatch-ratchet.sh), driven by
+`.escape-hatches.json` at the repo root — per-pattern ceilings, because a single total
+would let a change trade one `@ts-expect-error` for three `as any` and still pass.
+`--update` only ever lowers a ceiling; raising one is a hand edit to the config, which
+is exactly the reviewable act described above. It is wired into `pre-commit` and runs
+only when the commit touches a configured scope, so a preexisting breach never blocks an
+unrelated change.
 
 ## Rule 5 — a gate the runtime cannot install is declared, never pretended
 

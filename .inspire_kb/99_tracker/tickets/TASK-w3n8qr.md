@@ -43,10 +43,12 @@ below both. This ticket closes the distance, and carries the part no skill can i
 1. **Raise the lint set** to what the profile specifies. Each rule enters **absolute**
    if the existing violations are few; where there are many it enters scoped to changed
    files, and the cleanup stays on this ticket. Never dropped silently.
-2. **Escape-hatch ceiling.** Count the current suppressions plus `as any` /
-   `as unknown as` / `x!`, commit that number as the ceiling, and wire a check that
-   fails when it rises. Measure **before** step 1 — raising the lint set is what
-   produces new suppressions, so the honest baseline only exists now.
+2. **Escape-hatch ceiling.** The enforcement exists as of 2026-07-29
+   (`.claude/bin/escape-hatch-ratchet.sh`, wired into `pre-commit`); what is missing is
+   this project's `.escape-hatches.json`. Seed it with the TypeScript patterns from the
+   `nestjs` profile and run the script with `--update` to set each ceiling from the
+   actual count. Do this **before** step 1 — raising the lint set is what produces new
+   suppressions, so the honest baseline only exists beforehand.
 3. **Coverage floor** in the jest config, set from what the suite currently achieves,
    not from an aspiration.
 4. **Declare the aggregate-metrics service** in `stack.md` and install the in-repo

@@ -72,9 +72,12 @@ prop-drilled component state.
   over `@ts-ignore`, since it expires once the real error is fixed.
 - `@eslint-community/eslint-plugin-eslint-comments`: `require-description` ·
   `no-unlimited-disable` · `no-unused-disable`.
-- Counted and ratcheted in-repo alongside `as any` / `x!` and any
+- Counted and ratcheted in-repo (`.escape-hatches.json`, enforced by
+  `.claude/bin/escape-hatch-ratchet.sh`) alongside `as any` / `x!` and any
   `eslint-disable` of `jsx-a11y` — an accessibility suppression is the one most worth
-  seeing a number for, because nothing else in the pipeline notices it.
+  seeing a number for, because nothing else in the pipeline notices it. Give it its own
+  pattern id rather than folding it into the general count, so it cannot hide behind a
+  budget spent on type casts.
 
 ## Build & verify
 build: `npm run build` · lint: `npm run lint` · types: `npx tsc --noEmit` ·

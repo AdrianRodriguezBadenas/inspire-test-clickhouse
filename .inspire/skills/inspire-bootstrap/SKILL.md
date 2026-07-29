@@ -139,8 +139,12 @@ and `profiles:` are confirmed:
 1. **Install the in-repo gates** listed in each resolved profile's `## Quality gates`
    — the lint rules, the test-runner thresholds, and the CI job that runs them. New rules go in **absolute**; a rule the existing code
    cannot satisfy yet enters scoped or ratcheted with a `/inspire_task` ticket for the
-   cleanup. Never dropped silently. On a greenfield project the escape-hatch ceiling is
-   seeded at **zero** — the only moment it is free.
+   cleanup. Never dropped silently. Seed `.escape-hatches.json` with the stack's
+   suppression patterns from the profile and run
+   `.claude/bin/escape-hatch-ratchet.sh --update` to set the ceilings from what the code
+   actually contains. On a greenfield project that is **zero** — the only moment it is
+   free. On existing code, measure **before** raising the lint set: raising it is what
+   produces new suppressions, so the honest baseline only exists beforehand.
 2. **Declare the external gate** in `stack.md` — which service keeps the history of
    the aggregate metrics (coverage, duplication, bundle size), since the runtime must
    not store that baseline in the repository it is judging. Record it; the in-repo bridge (CI
