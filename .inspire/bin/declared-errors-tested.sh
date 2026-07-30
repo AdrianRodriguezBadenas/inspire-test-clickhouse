@@ -19,15 +19,9 @@
 # deliberately NOT in `review.sh`'s default list: `/inspire_domain review` is a
 # knowledge-base review. Invoked by `pre-pr.sh` and by `/inspire_code review`.
 #
-# Config (env, all optional):
-#   DECLARED_ERRORS_TEST_SCOPE  directory holding the tests   (default: source)
-#   DECLARED_ERRORS_TEST_GLOBS  space-separated filename globs
-#                               (default: *.spec.* *-spec.* *.test.* *-test.* *_test.*
-#                                         test_*.*)
-#                               The hyphen forms are not redundant: `*.spec.*` does not
-#                               match `create.e2e-spec.ts`, which is the NestJS e2e
-#                               convention — omitting them silently skips every e2e file
-#                               and reports the errors as untested.
+# Config (env, all optional): SDD_TEST_SCOPE · SDD_TEST_GLOBS, defined in `_lib.sh` and
+# shared with `criteria-have-tests.sh` — the discovery logic lives there precisely so the
+# two gates cannot drift apart on what counts as a test file.
 #
 # Usage:
 #   .claude/bin/declared-errors-tested.sh                    # whole tree
@@ -42,8 +36,7 @@ sdd_require_tools || exit 127
 sdd_init_counters
 
 SCOPE="${1:-$SDD_SPEC_ROOT}"
-TEST_SCOPE="${DECLARED_ERRORS_TEST_SCOPE:-source}"
-read -r -a TEST_GLOBS <<< "${DECLARED_ERRORS_TEST_GLOBS:-*.spec.* *-spec.* *.test.* *-test.* *_test.* test_*.*}"
+TEST_SCOPE="$SDD_TEST_SCOPE"
 
 if [ ! -d "$TEST_SCOPE" ]; then
   sdd_finding "warning" "declared-errors-tested" "$TEST_SCOPE" \
@@ -60,18 +53,7 @@ fi
 
 TEST_FILES="$(mktemp -t declared-errors-tests.XXXXXX)"
 trap 'rm -f "$TEST_FILES"' EXIT
-
-glob_args=()
-for g in "${TEST_GLOBS[@]}"; do
-  [ -z "$g" ] && continue
-  [ ${#glob_args[@]} -gt 0 ] && glob_args+=(-o)
-  glob_args+=(-name "$g")
-done
-
-if [ ${#glob_args[@]} -gt 0 ]; then
-  find "$TEST_SCOPE" -type f \( "${glob_args[@]}" \) 2>/dev/null \
-    | grep -v '/node_modules/' | grep -v '/dist/' > "$TEST_FILES"
-fi
+sdd_find_test_files > "$TEST_FILES"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Per action: read `## Errors`, extract the leading backticked code from each
@@ -100,8 +82,7 @@ check_action() {
 
   while IFS= read -r code; do
     [ -z "$code" ] && continue
-    if [ -s "$TEST_FILES" ] && \
-       tr '\n' '\0' < "$TEST_FILES" | xargs -0 grep -qlF -- "$code" 2>/dev/null; then
+    if sdd_literal_in_tests "$code" "$TEST_FILES"; then
       continue
     fi
     sdd_finding "$severity" "declared-errors-tested" "$file" \

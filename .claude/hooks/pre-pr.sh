@@ -50,6 +50,11 @@ STATUS=0
 errors_tested="$PROJECT_ROOT/.claude/bin/declared-errors-tested.sh"
 [ -x "$errors_tested" ] && { "$errors_tested" .inspire_kb/04_domain || STATUS=2; }
 
+# Every acceptance criterion traceable to a test. Same lifecycle-progressive shape:
+# a 🟡 Planned feature warns, a feature being worked on or claimed done blocks.
+criteria_tested="$PROJECT_ROOT/.claude/bin/criteria-have-tests.sh"
+[ -x "$criteria_tested" ] && { "$criteria_tested" .inspire_kb/03_features || STATUS=2; }
+
 # The escape-hatch ratchet, unscoped. `pre-commit` deliberately skips commits that
 # touch no configured scope so a preexisting breach cannot block unrelated work; at
 # PR time there is no unrelated work — this is the last gate before a merge, and a

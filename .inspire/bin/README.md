@@ -56,6 +56,11 @@ The library implements the **quality gate** (per D24 in the SDD V3 reframe adden
 |---|---|---|
 | `escape-hatch-ratchet.sh` | The count of deliberate rule suppressions in the product code may fall, never rise. Per-pattern ceilings from `.escape-hatches.json`; `--update` can only lower them. | Reads `source/`, **not** `.inspire_kb/`. Deliberately **absent from `review.sh`'s default rule list** — `/inspire_domain review` is a KB review and must not start judging product code. Invoked directly by `pre-commit.sh` and by `/inspire_code review`. |
 | `declared-errors-tested.sh` | Every error an action declares in `## Errors` appears as a literal in a test file. | Reads both the KB and `source/`. Lifecycle-progressive: warning at `draft` (TDD writes the spec first), error at `accepted`+, skipped at `superseded`. Also absent from the default list, for the same reason. Wired into `pre-pr.sh`. |
+| `criteria-have-tests.sh` | Every acceptance criterion carries a **stable id**, claimed by a test through `/** @covers {id} */`. | The larger half of "nothing untested" — errors are the small half. The id lives in an annotation, never in the test name, so CI output stays readable. Two findings: `carries no id` (untraceable by construction, so reported even when tests exist) and `is claimed by no test`. Severity from the feature's `**State:**`: warning at 🟡 Planned, error at 🔵 In progress and 🟢 Implemented. Wired into `pre-pr.sh`. |
+
+Test-file discovery for both is in `_lib.sh` (`sdd_find_test_files`, `sdd_literal_in_tests`,
+`SDD_TEST_SCOPE`, `SDD_TEST_GLOBS`) rather than duplicated per rule — the two gates must
+agree on what a test file *is*, and the glob set already had one silent-miss bug in it.
 
 Everything else here validates the knowledge base; this one validates the code the
 knowledge base produced. It is stack-agnostic because every pattern and every ceiling

@@ -74,8 +74,14 @@ written down; the third is what stops the list depending on whoever authored the
 feature file remembering the boring cases.
 
 1. **The acceptance criteria** — `03_features/{module}/{feature-id}.md`. One testable
-   criterion → at least one test. A criterion you cannot write a test for is a spec
-   problem; hand it back before writing code.
+   criterion → at least one test, and the test **claims** it with `/** @covers {id} */`
+   above it. The id stays out of the test name: names are read on every CI failure, so
+   they hold a sentence about behavior (ideally the criterion's own words) while the
+   annotation carries the traceability. Enforced by
+   `.claude/bin/criteria-have-tests.sh` — warning while the feature is 🟡 Planned,
+   blocking from 🔵 In progress on, because that is when work has started and the first
+   act of TDD is the test. A criterion you cannot write a test for is a spec problem;
+   hand it back before writing code.
 2. **Every error the descriptor declares** — each bullet in the action descriptor's
    `## Errors` is a test. A declared error with no test is a contract nobody checks, and
    this one is **enforced**: `.claude/bin/declared-errors-tested.sh` requires the error

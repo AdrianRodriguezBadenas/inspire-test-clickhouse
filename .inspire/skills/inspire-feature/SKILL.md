@@ -230,9 +230,32 @@ Use this template at `.inspire_kb/03_features/{module}/{feature-id}.md`:
 {What is true after successful completion}
 
 ## Acceptance criteria
-- [ ] {Testable criterion 1}
-- [ ] {Testable criterion 2}
+- [ ] ({feature-id}-1) {Testable criterion 1}
+- [ ] ({feature-id}-2) {Testable criterion 2}
 ```
+
+**Every criterion carries a stable id**, and it is not decoration: `criteria-have-tests.sh`
+requires a test to claim it, so an untested criterion becomes a blocking finding instead of
+something a reviewer has to notice. Three rules make the id trustworthy:
+
+- **Assigned once, never renumbered.** Deleting criterion 3 retires `-3`; the next new one
+  is `-11`, not `-3`. Positional numbering was rejected on purpose — inserting a criterion
+  would silently re-point every test after it, which is the drift the gate exists to kill.
+- **A test claims it with `@covers`**, in an annotation above the test:
+
+  ```ts
+  /** @covers ANL-02-6 */
+  it('returns an empty page rather than an error when nothing matches', …)
+  ```
+
+- **The id never goes in the test name.** Test names are read on every CI failure, and an
+  opaque token there is noise for whoever arrives next. Keep the name a sentence about
+  behavior — ideally the criterion's own words, which is what makes the pair legible
+  without the id being visible at all.
+
+One criterion may be claimed by several tests, and one test may claim several ids
+(`@covers ANL-02-1 ANL-02-2`) when it genuinely exercises both. What is *not* allowed is a
+criterion no test claims.
 
 ## Acceptance-criteria quality gate
 
