@@ -40,4 +40,31 @@ esac
 
 cd "$PROJECT_ROOT"
 
-"$PROJECT_ROOT/.claude/bin/review.sh" .inspire_kb/04_domain || exit 2
+STATUS=0
+
+"$PROJECT_ROOT/.claude/bin/review.sh" .inspire_kb/04_domain || STATUS=2
+
+# Every error a descriptor declares must be exercised by a test. Lifecycle-progressive
+# on its own (warning at draft, error at accepted+), so this can run unconditionally:
+# a spec still being drafted does not block a PR, a closed contract does.
+errors_tested="$PROJECT_ROOT/.claude/bin/declared-errors-tested.sh"
+[ -x "$errors_tested" ] && { "$errors_tested" .inspire_kb/04_domain || STATUS=2; }
+
+# The escape-hatch ratchet, unscoped. `pre-commit` deliberately skips commits that
+# touch no configured scope so a preexisting breach cannot block unrelated work; at
+# PR time there is no unrelated work — this is the last gate before a merge, and a
+# `git commit` from a plain terminal never fired the commit-time hook at all.
+hatch_config="${ESCAPE_HATCH_CONFIG:-.escape-hatches.json}"
+if [ -f "$hatch_config" ]; then
+  hatch_script="$PROJECT_ROOT/.claude/bin/escape-hatch-ratchet.sh"
+  if [ ! -x "$hatch_script" ]; then
+    echo "pre-pr: $hatch_config declares a ratchet but $hatch_script is not installed —" >&2
+    echo "        run bash .inspire/install.sh, or remove the config. A declared gate that" >&2
+    echo "        silently does not run is worse than no gate." >&2
+    STATUS=2
+  else
+    "$hatch_script" >/dev/null || STATUS=2
+  fi
+fi
+
+exit $STATUS

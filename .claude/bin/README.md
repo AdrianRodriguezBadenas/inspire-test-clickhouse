@@ -50,6 +50,19 @@ The library implements the **quality gate** (per D24 in the SDD V3 reframe adden
 | `rationale-wikilink.sh` | (9) Entity `## Rationale` (or action `## Purpose` ∪ `## Behavior`) contains ≥1 `[[wikilink]]`. | Warning if object is draft; error if accepted+. |
 | `wikilinks-resolve.sh` | (10) Every `[[wikilink]]` in body resolves to an existing file (SDD object id or PDD/ADR basename). | Warning if object is draft; error if accepted+. |
 
+### Source-code gate — the one rule that does not read the KB
+
+| Script | Checks | Notes |
+|---|---|---|
+| `escape-hatch-ratchet.sh` | The count of deliberate rule suppressions in the product code may fall, never rise. Per-pattern ceilings from `.escape-hatches.json`; `--update` can only lower them. | Reads `source/`, **not** `.inspire_kb/`. Deliberately **absent from `review.sh`'s default rule list** — `/inspire_domain review` is a KB review and must not start judging product code. Invoked directly by `pre-commit.sh` and by `/inspire_code review`. |
+| `declared-errors-tested.sh` | Every error an action declares in `## Errors` appears as a literal in a test file. | Reads both the KB and `source/`. Lifecycle-progressive: warning at `draft` (TDD writes the spec first), error at `accepted`+, skipped at `superseded`. Also absent from the default list, for the same reason. Wired into `pre-pr.sh`. |
+
+Everything else here validates the knowledge base; this one validates the code the
+knowledge base produced. It is stack-agnostic because every pattern and every ceiling
+comes from the project's config — the runtime never hardcodes one language's suppression
+syntax. Rationale and the ceiling-in-repo exception:
+[`_references/quality-gates.md`](../skills/_references/quality-gates.md) Rule 4.
+
 ### Library
 
 | Script | Purpose | When it runs |

@@ -1,9 +1,17 @@
 # INSPIRE — workspace guide for Claude
 
-This repository is the **home of the INSPIRE methodology** (a software
-engineering methodology for the agentic era) and a **template** for bootstrapping
-new specification-driven projects. See [README.md](README.md) for the full
-overview, or the manual at [inspire.openbims.dev](https://inspire.openbims.dev).
+This repository is a **fork of the INSPIRE template, instantiated as a live
+project** — a ClickHouse-backed analytics service (see [README.md](README.md)).
+INSPIRE is a software engineering methodology for the agentic era; the manual is at
+[inspire.openbims.dev](https://inspire.openbims.dev).
+
+It wears two hats, and confusing them is the main way to get this repo wrong:
+
+- **A product.** `.inspire_kb/` holds this project's real knowledge base, `source/`
+  its production code. The guardrail runtime is **live** in `.claude/`.
+- **An upstream contributor.** Improvements to the methodology made here are meant to
+  flow back to INSPIRE core, which is why the runtime is still edited at its versioned
+  source (`.inspire/`) rather than in the deployed copy.
 
 ## Structure
 
@@ -43,15 +51,16 @@ you build on top of it.
     `released`); `install.sh` freezes it into a fork's root `.inspire.lock`
     (provenance: which release the fork was instantiated from), which `inspire-learn`
     stamps onto every learning.
-- `.inspire_kb/` — the **knowledge-base skeleton**: the navigable graph a project
-  fills in. One layer per skill (`00_bootstrap`, `01_adr`, `02_modules`,
+- `.inspire_kb/` — **this project's knowledge base**, not an empty skeleton: the
+  navigable graph the product is specified in, and the source of truth the code is
+  judged against. One layer per skill (`00_bootstrap`, `01_adr`, `02_modules`,
   `03_features`, `04_domain`, `05_screens`, `06_spikes`, `98_skill_learnings`, `99_tracker`); each folder carries a
   README explaining its purpose and layout.
 - `.manual/` — the INSPIRE **microsite / manual** (canonical explanation;
   published at inspire.openbims.dev; source here — open `.manual/index.html`).
-The two product-side dirs below **do not exist in this template repo** — they are
-the product you build, not INSPIRE. `install.sh` creates them (from
-`.inspire/templates/`) when a fork is instantiated:
+The two product-side dirs below are the product, not INSPIRE. They **exist here**,
+created by `install.sh` from `.inspire/templates/` when this fork was instantiated, and
+re-running it leaves them alone:
 
 - `prototype/` — the **horizontal prototype** (product-side, non-dot): the wide,
   shallow, mocked working model of the whole product. It keeps **no KB file** — its
@@ -65,35 +74,56 @@ the product you build, not INSPIRE. `install.sh` creates them (from
 ### Template vs deployed layout — why the runtime is staged in `.inspire/`
 
 Claude Code auto-loads skills from `.claude/skills/` and runs hooks registered in
-`.claude/settings.json`. The skills also reference each other and the validators
-via the **deployed** paths (`.claude/skills/…`, `.claude/bin/…`). If the runtime
-lived in `.claude/` inside *this* template repo, those skills would fire while the
-template itself is edited — so it is staged **dormant** under `.inspire/`.
+`.claude/settings.json`. The skills also reference each other and the validators via the
+**deployed** paths (`.claude/skills/…`, `.claude/bin/…`). In the upstream template the
+runtime is staged **dormant** under `.inspire/` so the skills do not fire while the
+template itself is being edited.
 
-Instantiating a project (in a fork) is one command:
+**Here the runtime is live**, and `.inspire/` keeps a second job: it is the versioned
+source a fork edits, so an improvement can be promoted upstream. That is why the two
+trees exist side by side in this repo, and why editing the deployed one is a mistake
+rather than a shortcut.
+
+Deploying (or re-deploying, after editing `.inspire/`) is one command:
 
 ```bash
 bash .inspire/install.sh
 ```
 
 It copies `.inspire/{skills,bin,hooks}` → `.claude/{skills,bin,hooks}`, makes the
-scripts executable, wires the hooks into `.claude/settings.json`, seeds
-`05_screens/design-system.md` from `00_bootstrap/theme.md`, creates the
-product-side `prototype/` + `source/` folders from `.inspire/templates/`, and
-removes the template's own methodology `README.md` (a fork gets its own via
-`/inspire_bootstrap init`). It is idempotent — `.inspire/` stays the versioned
-source of truth; re-run it to refresh `.claude/` after pulling template updates
-(existing `prototype/`, `source/` and a project's own `README.md` are left
-untouched).
+scripts executable, and re-freezes `.inspire.lock` with the deploying commit. The rest
+of its steps are **create-if-absent, never clobber**, so on an already-instantiated fork
+like this one they all report "left as-is": the hooks in `.claude/settings.json`, the
+live `05_screens/design-system.md`, `prototype/`, `source/`, and the project's own
+`README.md` (it only removes the *template's* methodology README, recognised by its
+tagline).
+
+So re-running it is routine, not risky — it is how an edit under `.inspire/` becomes the
+runtime that actually executes. The one thing it does overwrite is `.claude/{skills,bin,
+hooks}`, which is precisely why nothing should ever be edited there.
 
 ## Working in this repo
 
-- This is the **template**, not a live project. Do **not** run
-  `.inspire/install.sh` here — it would activate the runtime against this repo.
-- Keep the runtime **generic**: the skills, the validators and the `.inspire_kb/`
-  skeleton must stay stack-agnostic and free of any specific product's domain
-  vocabulary. Concrete project content belongs in a fork's `.inspire_kb/`, not here.
-- The KB ships as a **skeleton** — each layer has a README (and, where useful,
-  starter files); a real project fills the rest in via the skills.
+- **Edit the runtime in `.inspire/`, never in `.claude/`.** `.inspire/` is the
+  versioned source; `.claude/` is a deployed copy that `install.sh` **overwrites**, so
+  an edit made there is lost on the next deploy and never reaches upstream. This is the
+  single most important rule in this file.
+- **Deploy with `bash .inspire/install.sh`.** It is idempotent and safe to re-run: it
+  copies `.inspire/{skills,bin,hooks}` → `.claude/`, and leaves `prototype/`, `source/`,
+  the project `README.md`, the live design system and an existing `settings.json`
+  untouched. It also re-freezes `.inspire.lock` with the deploying commit, which is the
+  fork's provenance record. Until it runs, the hooks and the skills keep executing the
+  previous version — a fixed rule that has not been deployed is not in force.
+- A restart of Claude Code is **not** needed for skill or hook *content* (both are read
+  when they run), only when a brand-new skill directory is added, since the available-
+  skills list is built at session start.
+- **Keep the runtime generic.** The skills and validators must stay stack-agnostic and
+  free of this product's domain vocabulary — that is what keeps them promotable
+  upstream. This project's concrete content belongs in `.inspire_kb/` and `source/`, and
+  its stack-specific rules in a `inspire-code/profiles/` profile, never inlined in a
+  skill.
+- **Record methodology insights** with `/inspire_learn note` — write-once, version-
+  stamped, so a change made here can be carried to INSPIRE core with its reasoning
+  intact.
 - Run the validator suite with `bash .inspire/bin/test/run-tests.sh` after touching
   anything under `.inspire/bin/`.
