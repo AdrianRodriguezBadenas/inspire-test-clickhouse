@@ -202,6 +202,34 @@ describe('Variants (e2e)', () => {
       expect(third.body.next_cursor).toBeNull();
     });
 
+    // The literals are deliberate: ANL-02 states "defaults to 50 and is capped at 200",
+    // so 50 and 200 are the contract. Importing DEFAULT_PAGE_SIZE / MAX_PAGE_SIZE here
+    // would assert the code against itself — changing the constant would change the
+    // expectation with it, and the test would pass through the regression.
+    it('defaults the page to 50 and caps it at 200, clamping rather than rejecting', async () => {
+      await insertMany(201);
+      // Default ordering is project_id, collection, uri ASC — uri compares as a STRING,
+      // so the page boundary falls on lexicographic order (chr1:0, chr1:1, chr1:10, …),
+      // not numeric. Asserting the exact slice pins that; a length check hides it.
+      const inStoredOrder = Array.from({ length: 201 }, (_, i) => `chr1:${i}:A:T`).sort();
+
+      const defaulted = await query();
+      const overMax = await query({ limit: 500 });
+
+      expect(Object.keys(defaulted.body).sort()).toEqual(['items', 'next_cursor']);
+      expect(defaulted.body.items.map((item: { uri: string }) => item.uri)).toEqual(
+        inStoredOrder.slice(0, 50),
+      );
+      expect(defaulted.body.next_cursor).toEqual(expect.any(String));
+
+      expect(overMax.status).toBe(200);
+      expect(Object.keys(overMax.body).sort()).toEqual(['items', 'next_cursor']);
+      expect(overMax.body.items.map((item: { uri: string }) => item.uri)).toEqual(
+        inStoredOrder.slice(0, 200),
+      );
+      expect(overMax.body.next_cursor).toEqual(expect.any(String));
+    });
+
     it('orders by the field the client asked for', async () => {
       await insert(aVariantBody({ uri: 'chr1:1:A:T', score: 0.1 }));
       await insert(aVariantBody({ uri: 'chr1:2:A:T', score: 0.9 }));

@@ -127,3 +127,31 @@ hooks}`, which is precisely why nothing should ever be edited there.
   intact.
 - Run the validator suite with `bash .inspire/bin/test/run-tests.sh` after touching
   anything under `.inspire/bin/`.
+
+## Touching `source/` — read this before writing a test
+
+These live in full in `.claude/skills/inspire-code/references/tdd.md`, which loads only
+when the `inspire-code` skill is invoked. They are repeated here because this file loads
+**every session**, and a rule that is not in context is not in force — the failure this
+section exists to prevent has already happened once.
+
+**Run `/inspire_code tdd` rather than writing tests freehand.** That is what loads the
+conventions, the resolved stack profile and the surface convention. Freehanding is how a
+test gets written against a rule nobody had open.
+
+The three that get violated by accident:
+
+1. **Assert the whole response, never a field or two.** For a collection or paginated
+   response that means the envelope's exact key set plus the members' natural keys **in
+   order** — not just a count. A count cannot tell a correct page from an off-by-one that
+   returned the same number of wrong rows.
+2. **Never build the expected value from the code under test.** Importing the constant
+   you are asserting (`toHaveLength(DEFAULT_PAGE_SIZE)`) makes the test move with the
+   bug. Where the spec states a literal, assert the literal.
+3. **Run the mutation drill before calling it done** (`tdd.md` step 6): break the settled
+   code on purpose, confirm the tests notice, revert. A survivor is a test gap, not a
+   code bug. This is the only one of the three that catches itself — the other two rely
+   on someone remembering, which is why the drill is not optional.
+
+Infrastructure first: e2e runs against real ClickHouse, so it must be **healthy** (not
+merely `Up`) before the first red test, and bringing it up is the operator's call.

@@ -204,6 +204,15 @@ it('describes one behavior', () => {
   persisted document, assert the whole object; build the expected value from the
   domain entity, never from the value under test (comparing a result against itself
   proves nothing).
+- **For a collection or paginated response, "the whole object" is the envelope plus the
+  identity and order of the members** — not every field of every member. Asserting 200
+  records × 40 fields is unmaintainable and breaks on every unrelated field addition, so
+  it degrades into `toHaveLength`, which is the real failure. Assert instead: the
+  envelope's **exact key set** (no extra, no missing), the members' **natural keys in
+  order**, and the paging fields. A count alone cannot tell a correct page from an
+  off-by-one that returned the same number of wrong rows — and that mutation is the one
+  a paging bug actually is. Each member's field shape is the subject of the
+  single-record tests; re-asserting it per member buys nothing.
 - **Prefer exact values over weak matchers.** Reach for "any"/"contains"/regex
   matchers only for values that are genuinely non-deterministic (generated ids,
   timestamps) — each weakening hides drift.
