@@ -293,6 +293,13 @@ line between the two is the project's resolved surface convention
   catch.
 - **Do write a criterion for anything that deviates** from the convention — a deviation
   is by definition not derivable.
+- **Never work backwards from the test suite.** A test with no criterion is normal: it may
+  come from the convention, from an ADR invariant, or from ordinary engineering (a unit
+  test, a regression test, a security probe). Inventing a criterion to give such a test a
+  home inflates the contract with programming conventions and is the failure mode this
+  section guards against. The one honest reason to add a criterion from a test is that the
+  test proves **user-observable behavior the feature genuinely forgot to state** — and
+  then it is the feature that was incomplete, not the test that was orphaned.
 
 Then a short **devil's advocate** pass — name at least a couple of ways the feature
 could break that the criteria don't yet cover (malformed/missing data, an external

@@ -93,6 +93,19 @@ feature file remembering the boring cases.
    resolved from `00_bootstrap/stack.md`'s `surface_conventions:`. Unknown id on a
    fetch, absent credential, valid credential without the permission, empty list,
    no stacktrace in an error body. These hold whether or not a criterion mentions them.
+4. **The invariants of any ADR the feature realizes** — a read-only transport exposing no
+   write, an append-only store never updating in place. These are architectural
+   guarantees, so they belong to the ADR and not to any one use case; a feature file that
+   restated them would drift from the ADR the moment it changed.
+
+**Only source 1 needs a criterion.** Sources 2–4 produce tests that no acceptance
+criterion mentions, and that is correct rather than a gap: writing a criterion for "an
+unknown id returns not-found" pushes a programming convention into the feature file, which
+is the duplication the convention layer exists to remove. `criteria-have-tests.sh` is
+one-directional for this reason — it asks whether each criterion is tested, never whether
+each test is specified. Beyond these four sources, ordinary engineering tests (unit tests
+of the decomposition, a regression test for a fixed bug, a security probe) need no
+justification from the KB at all.
 
 The convention also supplies **what each case asserts**: the descriptor declares the
 logical error (`missing_required_field`), the convention says what a caller observes

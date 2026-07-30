@@ -3,6 +3,14 @@
 #
 # Rule: every acceptance criterion of a feature is traceable to a test.
 #
+# **The converse is deliberately NOT a rule.** A test without a criterion is normal and
+# healthy: convention-derived cases (an unknown id returning not-found, an absent
+# credential), ADR invariants, unit tests of internal decomposition, regression tests for
+# a fixed bug, security probes. Requiring every test to claim a criterion would inflate
+# the feature file with programming conventions — the exact duplication the surface
+# conventions exist to remove. This gate walks criteria and asks "is it tested"; it never
+# walks tests asking "is it specified".
+#
 # This is the larger half of "nothing untested". `declared-errors-tested.sh` covers the
 # error set; this covers the behavior. Until now a criterion with no test was invisible:
 # `inspire-feature`'s gate is judgment, and judgment does not run on every commit.
