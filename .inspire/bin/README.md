@@ -55,6 +55,7 @@ The library implements the **quality gate** (per D24 in the SDD V3 reframe adden
 | Script | Checks | Notes |
 |---|---|---|
 | `escape-hatch-ratchet.sh` | The count of deliberate rule suppressions in the product code may fall, never rise. Per-pattern ceilings from `.escape-hatches.json`; `--update` can only lower them. | Reads `source/`, **not** `.inspire_kb/`. Deliberately **absent from `review.sh`'s default rule list** — `/inspire_domain review` is a KB review and must not start judging product code. Invoked directly by `pre-commit.sh` and by `/inspire_code review`. |
+| `declared-errors-tested.sh` | Every error an action declares in `## Errors` appears as a literal in a test file. | Reads both the KB and `source/`. Lifecycle-progressive: warning at `draft` (TDD writes the spec first), error at `accepted`+, skipped at `superseded`. Also absent from the default list, for the same reason. Wired into `pre-pr.sh`. |
 
 Everything else here validates the knowledge base; this one validates the code the
 knowledge base produced. It is stack-agnostic because every pattern and every ceiling

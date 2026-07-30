@@ -15,6 +15,33 @@ before writing code.
 > `## Forbidden patterns` refine the generic rules below, and its `## Build &
 > verify` gives the exact commands to run. No profile → the generic rules stand.
 
+## Precondition: the test infrastructure runs, or the cycle cannot start
+
+E2E tests are the first thing written, and they need something real to run against —
+the database, the broker, the cache. **No infrastructure, no red; no red, no TDD.** So
+this is a gate before step 1, not a chore discovered at step 2:
+
+1. **Read what the tests need** from `00_bootstrap/stack.md` (`## Data`, messaging, and
+   the local-dev-database choice). That is the declared inventory; the compose file is
+   its realization, not its source of truth.
+2. **Compare it against the compose file** in the product repo. Every declared component
+   the e2e suite touches has a service. A component in `stack.md` and not in compose is
+   the defect — a suite that cannot run, discovered halfway through writing it.
+3. **A new component is a KB edit first.** Needing Redis, a second database or a broker
+   is not a compose edit: it is a stack change. Record it in `stack.md` (and an ADR when
+   it is load-bearing — `stack.md` is explicit that replacing a load-bearing choice is an
+   ADR), *then* add the service. Compose follows the decision; it never stands in for it.
+4. **Ask the operator to bring it up. Never assume it is running, never start it
+   silently.** Long-running infrastructure is theirs to own: they may have it up already,
+   on other ports, or against a shared instance. Print the exact command and wait.
+5. **Verify, then start.** Run the e2e suite once before writing anything. It must fail
+   for the *right* reason — an assertion, not a connection refused. A connection error is
+   not red; it is a suite that never ran, and treating it as red is how an
+   implementation gets written against tests nobody has seen fail.
+
+The concrete commands and service names belong to the stack profile's
+`## Build & verify`; this precondition is the stack-agnostic part.
+
 ## Workflow
 
 1. **Clarify** — read the feature file and any action descriptor
@@ -50,7 +77,11 @@ feature file remembering the boring cases.
    criterion → at least one test. A criterion you cannot write a test for is a spec
    problem; hand it back before writing code.
 2. **Every error the descriptor declares** — each bullet in the action descriptor's
-   `## Errors` is a test. A declared error with no test is a contract nobody checks.
+   `## Errors` is a test. A declared error with no test is a contract nobody checks, and
+   this one is **enforced**: `.claude/bin/declared-errors-tested.sh` requires the error
+   code to appear as a literal in a test file — warning while the action is `draft`,
+   blocking from `accepted` on. Asserting the exact code is what the surface convention
+   asks for anyway, so satisfying the gate and satisfying the convention are one act.
 3. **The resolved surface convention's always-present cases** —
    [`../../_references/conventions/README.md`](../../_references/conventions/README.md),
    resolved from `00_bootstrap/stack.md`'s `surface_conventions:`. Unknown id on a

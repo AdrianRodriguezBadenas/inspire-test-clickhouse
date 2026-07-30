@@ -44,6 +44,12 @@ STATUS=0
 
 "$PROJECT_ROOT/.claude/bin/review.sh" .inspire_kb/04_domain || STATUS=2
 
+# Every error a descriptor declares must be exercised by a test. Lifecycle-progressive
+# on its own (warning at draft, error at accepted+), so this can run unconditionally:
+# a spec still being drafted does not block a PR, a closed contract does.
+errors_tested="$PROJECT_ROOT/.claude/bin/declared-errors-tested.sh"
+[ -x "$errors_tested" ] && { "$errors_tested" .inspire_kb/04_domain || STATUS=2; }
+
 # The escape-hatch ratchet, unscoped. `pre-commit` deliberately skips commits that
 # touch no configured scope so a preexisting breach cannot block unrelated work; at
 # PR time there is no unrelated work — this is the last gate before a merge, and a

@@ -100,3 +100,17 @@ case. Never a blanket disable of the correctness rules for `**/*.spec.ts`.
 ## Build & verify
 build: `npm run build` · lint: `npm run lint` · types: `npx tsc --noEmit` ·
 tests: `npm run test` + `npm run test:e2e`
+
+**Test infrastructure — check before the first red test** (the precondition in
+[`../references/tdd.md`](../references/tdd.md)). The components come from `stack.md`'s
+`## Test infrastructure`; the compose file realizes them:
+
+- Inspect: `docker compose config --services` — every declared component has a service.
+- Status: `docker compose ps` — a service must be **healthy**, not merely `Up`. Compose
+  services carrying a healthcheck report both, and `Up` is where a flaky e2e suite comes
+  from: the container exists, the server is still opening its ports.
+- **Ask the operator to run** `docker compose up -d` (or `--wait`, which blocks until
+  healthchecks pass). Do not start it silently — they may have it up on other ports or
+  pointed at a shared instance.
+- Then run `npm run test:e2e` once. A connection error is **not** red; it is a suite that
+  never ran.

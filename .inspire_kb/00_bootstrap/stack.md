@@ -53,6 +53,26 @@ moving off a deployed database) is an ADR.
   (`class-variance-authority` / `clsx` / `tailwind-merge` are frontend-only and
   not used here.)
 
+## Test infrastructure
+
+What the e2e suite needs running to be able to fail for the right reason. This is the
+**declared inventory**; `source/docker-compose.yml` realizes it, and is never the source
+of truth for it. `/inspire_code tdd` reads this list before writing a test and refuses to
+start the cycle against infrastructure that is not up.
+
+| Component | Service | Why the e2e suite needs it |
+|---|---|---|
+| ClickHouse | `clickhouse` | E2E runs against a **real** database — the query translation, the current-version projection and the pagination are the behavior under test, and a mocked store would assert the mock. |
+
+Bring it up with the profile's command; the operator owns that, not the agent. The
+service declares a healthcheck, so "up" means healthy, not merely started.
+
+**Adding a component is a KB edit before it is a compose edit.** A cache, a broker or a
+second database is a stack change: record it here (and as an ADR when it is load-bearing,
+per the rule at the top of this file), then add the service, then ask the operator to
+bring it up. Compose following the decision is the order; compose standing in for the
+decision is the failure.
+
 ## Surface conventions
 
 What a caller observes, so an acceptance criterion can become an executable test

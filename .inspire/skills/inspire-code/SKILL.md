@@ -136,17 +136,23 @@ stack-agnostic. Contract: [`profiles/README.md`](profiles/README.md).
 5. **Never silence the toolchain and never swallow errors.** See
    [`references/tdd.md`](references/tdd.md) — these authoring rules hold across
    every subcommand that writes code, not just `tdd`.
-6. **No production code without its test, and no test trusted until it has failed.**
+6. **Infrastructure before the first test.** E2E comes first, so the database / broker /
+   cache it runs against has to exist before the cycle starts. A component the tests need
+   is declared in `stack.md`'s `## Test infrastructure` (an ADR when load-bearing), then
+   added to the compose file, then brought up **by the operator** — never started
+   silently, never assumed. A connection error is not a red test; it is a test that never
+   ran. See [`references/tdd.md`](references/tdd.md).
+7. **No production code without its test, and no test trusted until it has failed.**
    `tdd` writes the failing test first; `review` flags new logic that arrived without
    one. Green is not the end of the cycle — the **mutation drill** closes it
    ([`references/tdd.md`](references/tdd.md), step 6): break the settled code on
    purpose and confirm the tests notice. A survivor is a test gap, not a code bug.
-7. **Commits and pushes stay operator-only.** No subcommand runs `git commit` /
+8. **Commits and pushes stay operator-only.** No subcommand runs `git commit` /
    `git push` as a side effect. When the operator does ask, follow the shared git
    discipline in
    [`_references/git-conventions.md`](../_references/git-conventions.md) (the
    project's `CLAUDE.md` overrides it).
-8. **Consult the task tracker** at the start of multi-step subcommands
+9. **Consult the task tracker** at the start of multi-step subcommands
    (`/inspire_task list`). Surface known items as `(tracked: TASK-{id})`
    rather than re-reporting them as new. If a session surfaces friction worth
    capturing, offer a skill-feedback ticket (`epic: skill-feedback`,
