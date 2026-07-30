@@ -129,6 +129,31 @@ generic coding-stage checks. After confirming the layers:
    the coding stage starts stack-aware. Framework conventions only — org policy
    (branch naming, private registries, CI) stays in the project's `CLAUDE.md`.
 
+### Surface conventions (selected with the stack)
+
+A project's wire behavior is decided **once, here** — not per feature, and never by
+whoever writes the first test. Resolve it right after the layers:
+
+1. **Select the convention set** from the transport the stack declares (an HTTP API →
+   `rest`; a GraphQL surface → `graphql`; a CLI → its own) and write it to `stack.md`'s
+   frontmatter as `surface_conventions: [<id>, …]`. The catalogue lives in
+   [`_references/conventions/`](../_references/conventions/README.md); a transport with
+   no convention file is an offer to author one, not a reason to proceed on guesses.
+2. **Ask the project-policy questions** — and *only* those. Each convention file's
+   `## Project policy` table is the question list, already closed-ended with a default
+   per row: the existence-leak choice (`403` vs `404`), the validation status, the error
+   body shape, and so on. Use `AskUserQuestion`, one pass, with the file's default
+   marked as recommended. Do **not** ask what the convention already derives — an
+   unknown id returning not-found is not a question.
+3. **Record the answers** in `stack.md`'s `## Surface conventions`, one row per decision.
+   An unanswered row is written as **not decided yet** with a ticket, never quietly
+   defaulted: the convention's default then applies, and saying so is what keeps a later
+   test from pinning a different choice as though it were the contract.
+
+Why this belongs at bootstrap and not in the coding stage: the answers are what turn an
+acceptance criterion into an executable test. Deferred, every feature re-derives them,
+and two features end up with two contracts for the same error.
+
 ### Quality gates (installed with the stack)
 
 A project's gates are part of its foundation, not an afterthought: what the operator

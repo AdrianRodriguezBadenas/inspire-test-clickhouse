@@ -21,8 +21,13 @@ before writing code.
    (`04_domain/{module}/{entity}/`) that specifies the behavior. Extract inputs,
    outputs, and edge cases from the acceptance criteria and the descriptor's
    contract. Do not invent behavior the KB doesn't state.
-2. **Write failing tests** — one per acceptance criterion, using the project's test
-   framework. Run them; confirm they fail for the right reason (red).
+2. **Derive the test list, then write it as e2e** — the list is not invented, it is
+   composed (see *The test list is derived* below). Write them at the **e2e level
+   first**: the acceptance criteria describe what a caller observes, so that is the
+   level they translate to — one request in, one response out, real database, external
+   systems mocked. Run them; confirm they fail for the right reason (red). Unit tests
+   come later, from the internal decomposition step 3 produces — they cannot be written
+   before the units exist.
 3. **Implement the minimum** — the simplest code that passes. No speculative
    generality.
 4. **Verify** — run the tests (and the build) using the project's commands (green).
@@ -34,6 +39,63 @@ before writing code.
 Steps 1–5 prove the code does what the criteria say. Step 6 proves the **tests would
 have caught it if it didn't** — the one thing a green suite cannot tell you about
 itself.
+
+## The test list is derived, not invented
+
+Before writing a line, compose the list from three sources. Two of them are already
+written down; the third is what stops the list depending on whoever authored the
+feature file remembering the boring cases.
+
+1. **The acceptance criteria** — `03_features/{module}/{feature-id}.md`. One testable
+   criterion → at least one test. A criterion you cannot write a test for is a spec
+   problem; hand it back before writing code.
+2. **Every error the descriptor declares** — each bullet in the action descriptor's
+   `## Errors` is a test. A declared error with no test is a contract nobody checks.
+3. **The resolved surface convention's always-present cases** —
+   [`../../_references/conventions/README.md`](../../_references/conventions/README.md),
+   resolved from `00_bootstrap/stack.md`'s `surface_conventions:`. Unknown id on a
+   fetch, absent credential, valid credential without the permission, empty list,
+   no stacktrace in an error body. These hold whether or not a criterion mentions them.
+
+The convention also supplies **what each case asserts**: the descriptor declares the
+logical error (`missing_required_field`), the convention says what a caller observes
+(which status, which code, which envelope). Neither alone is enough to write the test,
+and inventing the missing half is what makes two engineers write two different contracts
+for the same spec. **No convention resolved → say so and stop**; do not guess a status
+code and then pin the guess with a test.
+
+Where the descriptor carries a `**Surface deviation:**` note, that note wins over the
+convention. Where it does not, the convention holds — that is what makes it restrictive.
+
+## The test boundary
+
+**A test starts when the entry point is invoked and ends with the response.** That
+single sentence decides most mocking arguments before they start.
+
+Inside the boundary — asserted, in full:
+
+- The **response**, whole. Not a field or two out of the envelope.
+- What was **persisted**: the full stored record, built from the domain entity, not from
+  the value under test.
+- What was **sent outward**: the third-party request that was made — its URL, method and
+  body — not merely that a mock existed.
+- What was **published**: the full payload of each emitted event or message, and its
+  topic/key. An event is an output of the action; an unasserted publish is an untested
+  output.
+
+Outside the boundary — mocked, and deliberately not followed:
+
+- Third-party APIs. We do not own them; their behavior is a fixture, and the interesting
+  assertion is what *we* sent.
+- Event consumers. The action's job ended when the event was published. Whether a
+  downstream consumer handled it is that consumer's own test, at its own boundary.
+- Anything asynchronous that continues after the response is returned — chase it and the
+  test becomes a slow, flaky integration test of the whole system, failing for reasons
+  that have nothing to do with the action under test.
+
+The rule cuts both ways: **stopping short is as wrong as going too far.** An action that
+saves a row, calls a payment provider and emits an event has three outputs plus its
+response. A test asserting only the response passes while two of the four are broken.
 
 ## The mutation drill (step 6)
 

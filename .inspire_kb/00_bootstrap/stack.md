@@ -2,6 +2,7 @@
 kind: bootstrap-stack
 status: configured          # configured via /inspire_bootstrap init
 profiles: [nestjs]          # inspire-code stack profiles to load (see .inspire/skills/inspire-code/profiles)
+surface_conventions: [graphql, rest]   # wire conventions to apply (see .claude/skills/_references/conventions)
 ---
 
 # Tech stack
@@ -51,6 +52,73 @@ moving off a deployed database) is an ADR.
 - One package manager, one lint/format config; ESLint for linting.
   (`class-variance-authority` / `clsx` / `tailwind-merge` are frontend-only and
   not used here.)
+
+## Surface conventions
+
+What a caller observes, so an acceptance criterion can become an executable test
+without anyone inventing the missing half. A convention supplies the derived mapping
+from logical error to observable response, and an action descriptor never restates it.
+The decisions below are the ones no convention can make for us.
+
+**This project has two surfaces, and they follow different conventions.**
+`adr-graphql-query-transport` is explicit that both transports are thin adapters over
+one application service:
+
+| Surface | Convention | Carries |
+|---|---|---|
+| GraphQL — **query only**, no `Mutation`, no `Subscription` | `graphql` | the read path. No write is exposed here, so no conflict, no collision, no validation-on-write ever surfaces on this transport. |
+| HTTP controller | `rest` | the single-record insert — and therefore every write-side error: validation, natural-key collision, conflict. |
+
+Getting this wrong in the obvious direction (reaching for the GraphQL convention when
+asking "what status does a conflict return?") produces an answer for a surface that
+cannot produce the error. The write-side error contract is the `rest` convention's.
+
+The production ingest path will be **file-based bulk**, not either of these
+([`TASK-2mf2yu`](../99_tracker/tickets/TASK-2mf2yu.md)). It is a third surface with no
+convention yet — a batch job reports per-record outcomes to a file or a log, not to a
+caller holding a connection, so neither table above fits it. Author one when that path
+is specified; until then it is an acknowledged gap, not a covered case.
+
+Because the surfaces split read from write, so do the open decisions. Several rows in
+the `graphql` convention's policy table **do not apply here at all** — expected-domain-
+error shape (schema result unions vs `errors[]`) is a write-side question, and this
+surface has no writes. Not answering an inapplicable question is correct; leaving it
+looking unanswered is not.
+
+**GraphQL surface (read):**
+
+| Decision | This project | Why it is ours to make |
+|---|---|---|
+| Absent variant on a single-item query | **not decided yet** | `null` with no error, or a `NOT_FOUND` in `errors`. The most-exercised path in the product; it must not be settled by whoever writes the first resolver. |
+| Nullability of list fields | **not decided yet** | `[T!]!` vs nullable — a nullable list makes every consumer branch on a case that never happens. |
+| Partial success on a multi-field query | **not decided yet** | Allowed (the protocol's own semantics) vs all-or-nothing. |
+
+**HTTP surface (write):**
+
+| Decision | This project | Why it is ours to make |
+|---|---|---|
+| Validation failure status | **not decided yet** | `400` vs `422`. This is the live one: `analytics.variant.create` already declares `missing_required_field` and `invalid_enum_value`, and neither has an observable response yet. |
+| Natural-key collision on insert | **not decided yet** | `409` vs `200` with the existing record. Note the ADR: an insert never updates, and out-of-order versions are legal — so "collision" may not be an error at all here, which is itself the decision. |
+| Error body shape | **not decided yet** | `problem+json` vs a project schema. |
+
+**Both surfaces:**
+
+| Decision | This project | Why it is ours to make |
+|---|---|---|
+| Whether either surface is authenticated at all | **not decided yet** | Nothing in the KB says it is. If neither is, every auth row below is moot and should be recorded as N/A rather than left open. |
+| Where the auth check runs | **not decided yet** | HTTP middleware (a real `401`/`403`, no GraphQL body) vs an in-execution guard (`200` + a code, optionally lifted via `extensions.http`). GraphQL settles nothing here, and the two produce completely different assertions. |
+| Auth error code vocabulary | **not decided yet** | `UNAUTHENTICATED` / `FORBIDDEN` are **not** Apollo codes — they were classes in Apollo Server 2–3, removed in 4. Whatever we use, we own and must declare. |
+| Expired credential | **not decided yet** | Same code as an absent credential, or a distinct one. |
+| Domain error codes | **not decided yet** | The Apollo built-in enum has no not-found, conflict or collision code, so most domain errors need a project one. |
+
+**Unanswered on purpose, not by omission** — these are operator decisions, tracked in
+[`TASK-k4t9mz`](../99_tracker/tickets/TASK-k4t9mz.md) rather than defaulted in silence.
+Until they are answered the convention's stated defaults apply, and a test pinning a
+different choice is drift, not a contract.
+
+One is settled already, because code was changed for it rather than argued: **no
+`stacktrace` extension in any error response, in any environment** — asserted on the
+whole `extensions` object, never on the presence of one key.
 
 ## Quality gates
 

@@ -18,9 +18,12 @@ logic never lives in a controller.
 - **Unit** (`*.spec.ts`) — services with their dependencies mocked (a typed
   auto-mock helper, not hand-rolled objects); assert the returned value **and** each
   collaborator call.
-- **E2E** (`*.e2e-spec.ts`) — controllers and DB repositories against a **real
-  database**; mock only outbound external HTTP (intercept and assert the request was
-  made). E2E never overrides providers.
+- **E2E** (`*.e2e-spec.ts`) — **written first**, from the acceptance criteria: they
+  describe what a caller observes, which is this level. Controllers and DB repositories
+  against a **real database**; mock only what sits outside the boundary and assert what
+  crossed it — the outbound HTTP request that was made (intercept and assert URL, method
+  and body), and the full payload plus topic/key of every event published. E2E never
+  overrides providers.
 - HTTP repositories (call an API, not a DB) are unit-tested — the contract is the
   parsing/mapping, not the transport.
 - GIVEN/WHEN/THEN; use test-data builders so each test sets only the significant

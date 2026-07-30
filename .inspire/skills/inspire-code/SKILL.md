@@ -168,6 +168,10 @@ stack-agnostic. Contract: [`profiles/README.md`](profiles/README.md).
 - [`_references/quality-gates.md`](../_references/quality-gates.md) — which layer
   owns a rule (lint vs metric gate vs human), absolutes vs ratchets, and why a
   threshold must live outside the author's write reach.
+- [`_references/conventions/README.md`](../_references/conventions/README.md) — the
+  surface conventions resolved from `00_bootstrap/stack.md`: what a caller observes for
+  each logical error, so `tdd` can derive its test list instead of inventing the half
+  the descriptor deliberately leaves out.
 
 ## Related skills
 
