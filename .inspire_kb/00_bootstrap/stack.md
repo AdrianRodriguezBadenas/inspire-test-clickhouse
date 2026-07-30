@@ -137,8 +137,9 @@ Until they are answered the convention's stated defaults apply, and a test pinni
 different choice is drift, not a contract.
 
 One is settled already, because code was changed for it rather than argued: **no
-`stacktrace` extension in any error response, in any environment** — asserted on the
-whole `extensions` object, never on the presence of one key.
+`stacktrace` extension in any error response, in any environment.** (How a test asserts
+that is method, not a project decision — it lives in the `graphql` convention's
+`## Response shape`, not here.)
 
 ## Quality gates
 
