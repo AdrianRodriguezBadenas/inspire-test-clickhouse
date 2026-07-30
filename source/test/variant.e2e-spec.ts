@@ -32,6 +32,7 @@ describe('Variants (e2e)', () => {
     request(server).post('/variants/query').send(body);
 
   describe('insert', () => {
+    /** @covers ANL-01-1 */
     it('stores a valid record and confirms it with the stored id', async () => {
       const response = await insert(aVariantBody());
 
@@ -39,6 +40,7 @@ describe('Variants (e2e)', () => {
       expect(response.body).toEqual({ id: expect.stringMatching(/^[0-9a-f-]{36}$/) });
     });
 
+    /** @covers ANL-01-1 */
     it('makes the stored record retrievable as the current version', async () => {
       const created = await insert(aVariantBody({ score: 0.75 }));
 
@@ -57,6 +59,7 @@ describe('Variants (e2e)', () => {
       });
     });
 
+    /** @covers ANL-01-4 */
     it('accepts a record carrying only the required fields, leaving the rest empty', async () => {
       await insert(aVariantBody());
 
@@ -65,6 +68,7 @@ describe('Variants (e2e)', () => {
       expect(page.body.items[0]).toMatchObject({ score: null, gene_symbol: null, hpo: [] });
     });
 
+    /** @covers ANL-01-5 */
     it('sets the ingest timestamp itself', async () => {
       const before = Date.now();
 
@@ -76,6 +80,7 @@ describe('Variants (e2e)', () => {
       expect(createdAt).toBeLessThanOrEqual(Date.now() + 1_000);
     });
 
+    /** @covers ANL-01-5 */
     it('ignores an ingest timestamp a client tries to set', async () => {
       const response = await insert(aVariantBody({ created_at: '2000-01-01T00:00:00.000Z' }));
 
@@ -85,6 +90,7 @@ describe('Variants (e2e)', () => {
       expect(response.body.message).toContain('created_at');
     });
 
+    /** @covers ANL-01-2 */
     it('rejects a record missing a required field, naming the field', async () => {
       const body = aVariantBody();
       delete body.collection;
@@ -99,6 +105,7 @@ describe('Variants (e2e)', () => {
       });
     });
 
+    /** @covers ANL-01-3 */
     it('rejects an enumerated field outside its allowed set, naming the allowed values', async () => {
       const response = await insert(aVariantBody({ origin: 'MOSAIC' }));
 
@@ -110,6 +117,7 @@ describe('Variants (e2e)', () => {
       });
     });
 
+    /** @covers ANL-01-6 */
     it('appends rather than replaces: both versions stay in the store', async () => {
       await insert(aVariantBody({ version_date: '2026-07-01T00:00:00.000Z' }));
       await insert(aVariantBody({ version_date: '2026-07-02T00:00:00.000Z' }));
@@ -117,6 +125,7 @@ describe('Variants (e2e)', () => {
       expect(await store.countRows()).toBe(2);
     });
 
+    /** @covers ANL-01-7 ANL-02-4 */
     it('returns only the current version of a variant with several versions', async () => {
       await insert(aVariantBody({ version_date: '2026-07-01T00:00:00.000Z', score: 0.1 }));
       await insert(aVariantBody({ version_date: '2026-07-02T00:00:00.000Z', score: 0.2 }));
@@ -130,6 +139,7 @@ describe('Variants (e2e)', () => {
       });
     });
 
+    /** @covers ANL-01-7 */
     it('resolves the current version by version_date, not by arrival order', async () => {
       await insert(aVariantBody({ version_date: '2026-07-02T00:00:00.000Z', score: 0.2 }));
       await insert(aVariantBody({ version_date: '2026-07-01T00:00:00.000Z', score: 0.1 }));
@@ -151,6 +161,7 @@ describe('Variants (e2e)', () => {
       }
     };
 
+    /** @covers ANL-02-1 */
     it('returns the current variants matching the filters', async () => {
       await insert(aVariantBody({ project_id: 1, uri: 'chr1:1:A:T' }));
       await insert(aVariantBody({ project_id: 2, uri: 'chr2:2:A:T' }));
@@ -161,6 +172,7 @@ describe('Variants (e2e)', () => {
       expect(page.body.items[0]).toMatchObject({ project_id: 2, uri: 'chr2:2:A:T' });
     });
 
+    /** @covers ANL-02-2 */
     it('returns every current variant when no filters are supplied', async () => {
       await insertMany(3);
 
@@ -170,6 +182,7 @@ describe('Variants (e2e)', () => {
       expect(page.body.next_cursor).toBeNull();
     });
 
+    /** @covers ANL-02-6 */
     it('returns an empty page rather than an error when nothing matches', async () => {
       await insertMany(1);
 
@@ -179,6 +192,7 @@ describe('Variants (e2e)', () => {
       expect(response.body).toEqual({ items: [], next_cursor: null });
     });
 
+    /** @covers ANL-02-3 */
     it('pages with a cursor when more results exist', async () => {
       await insertMany(3);
 
@@ -206,6 +220,7 @@ describe('Variants (e2e)', () => {
     // so 50 and 200 are the contract. Importing DEFAULT_PAGE_SIZE / MAX_PAGE_SIZE here
     // would assert the code against itself — changing the constant would change the
     // expectation with it, and the test would pass through the regression.
+    /** @covers ANL-02-3 */
     it('defaults the page to 50 and caps it at 200, clamping rather than rejecting', async () => {
       await insertMany(201);
       // Default ordering is project_id, collection, uri ASC — uri compares as a STRING,
@@ -230,6 +245,7 @@ describe('Variants (e2e)', () => {
       expect(overMax.body.next_cursor).toEqual(expect.any(String));
     });
 
+    /** @covers ANL-02-11 */
     it('orders by the field the client asked for', async () => {
       await insert(aVariantBody({ uri: 'chr1:1:A:T', score: 0.1 }));
       await insert(aVariantBody({ uri: 'chr1:2:A:T', score: 0.9 }));
@@ -239,6 +255,7 @@ describe('Variants (e2e)', () => {
       expect(page.body.items.map((item: { score: number }) => item.score)).toEqual([0.9, 0.1]);
     });
 
+    /** @covers ANL-02-5 */
     it('rejects a filter on a field that does not exist, naming the field', async () => {
       const response = await query({ where: { field: 'not_a_column', op: 'eq', value: 1 } });
 
@@ -257,6 +274,7 @@ describe('Variants (e2e)', () => {
       expect(response.body.code).toBe('unknown_query_operator');
     });
 
+    /** @covers ANL-02-10 */
     it('rejects an over-nested query without reading any data', async () => {
       const overDeep = Array.from({ length: 11 }).reduce<Record<string, unknown>>(
         (inner) => ({ not: inner }),
@@ -269,6 +287,7 @@ describe('Variants (e2e)', () => {
       expect(response.body.code).toBe('query_too_complex');
     });
 
+    /** @covers ANL-02-7 */
     it('modifies nothing', async () => {
       await insertMany(2);
       const before = await store.countRows();

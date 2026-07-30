@@ -3,7 +3,7 @@
 > Source: [[../../02_modules/analytics]]
 
 **Priority:** Core
-**State:** 🔵 In progress
+**State:** 🟢 Implemented
 **Dependencies:** [[ANL-01]]
 **ADRs referenced:** [[../../01_adr/adr-clickhouse-primary-database]], [[../../01_adr/adr-variant-history-current-projection]], [[../../01_adr/adr-variant-structured-query]], [[../../01_adr/adr-graphql-query-transport]]
 
@@ -53,24 +53,27 @@ a validation error that names the unknown field.
 
 ## Acceptance criteria
 
-- [ ] Given filter criteria, the system returns the matching **current** variants
-      (one per natural key) as a paginated page.
-- [ ] Given no filters, the system returns all current variants, paginated.
-- [ ] The page size defaults to 50 and is capped at 200; the response includes a
-      cursor to fetch the next page when more results exist.
-- [ ] A query never returns more than one version of the same
+- [ ] (ANL-02-1) Given filter criteria, the system returns the matching **current**
+      variants (one per natural key) as a paginated page.
+- [ ] (ANL-02-2) Given no filters, the system returns all current variants, paginated.
+- [ ] (ANL-02-3) The page size defaults to 50 and is capped at 200 — a request for more
+      is **clamped to 200, not rejected**; the response includes a cursor to fetch the
+      next page when more results exist.
+- [ ] (ANL-02-4) A query never returns more than one version of the same
       `(project_id, collection, uri)`; only the current version is returned.
-- [ ] Given a filter on a field that does not exist, the system rejects the request
-      with a validation error that names the field.
-- [ ] Given filters that match no records, the system returns an empty page rather
-      than an error.
-- [ ] The request does not modify any stored data.
-- [ ] The same logical query returns the same records, in the same order, with
+- [ ] (ANL-02-5) Given a filter on a field that does not exist, the system rejects the
+      request with a validation error that names the field.
+- [ ] (ANL-02-6) Given filters that match no records, the system returns an empty page
+      rather than an error.
+- [ ] (ANL-02-7) The request does not modify any stored data.
+- [ ] (ANL-02-8) The same logical query returns the same records, in the same order, with
       equivalent paging, regardless of which access route the client uses.
-- [ ] A rejected query is rejected identically on every access route: the same
+- [ ] (ANL-02-9) A rejected query is rejected identically on every access route: the same
       condition produces the same validation error naming the same field or operator.
-- [ ] A query nested beyond the permitted depth or complexity is rejected before any
-      data is read.
+- [ ] (ANL-02-10) A query nested beyond the permitted depth or complexity is rejected
+      before any data is read.
+- [ ] (ANL-02-11) Given an ordering the client asks for, the system returns the page
+      ordered by that field in that direction.
 
 ## Notes
 
@@ -83,5 +86,11 @@ Two access routes serve this one contract, permanently and by choice: the REST
 **read-only GraphQL** surface exposing the same tree as typed input types — see
 [[../../01_adr/adr-graphql-query-transport]]. Both are thin adapters over a single
 service, which is what makes the parity criteria above meaningful rather than
-aspirational. The GraphQL route is the remaining work on this feature (tracked in
-[[../../99_tracker/tickets/TASK-j01pke|TASK-j01pke]]); the REST route is done.
+aspirational. **Both routes are implemented**, and the parity criteria (`ANL-02-8`,
+`ANL-02-9`) are covered by an e2e suite that exercises each condition through both.
+
+Two things this feature deliberately does **not** cover, so their absence is not a gap
+here: the endpoints carry no authentication
+([[../../99_tracker/tickets/TASK-hwhrvk|TASK-hwhrvk]] — cross-cutting, and it must close
+before any non-test deployment), and the query interface is still coupled to ClickHouse
+concepts ([[../../99_tracker/tickets/TASK-j01pke|TASK-j01pke]]).

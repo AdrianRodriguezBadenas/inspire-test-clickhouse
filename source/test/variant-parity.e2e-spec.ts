@@ -92,6 +92,7 @@ describe('Variant query parity across access routes (e2e)', () => {
   };
 
   describe('the same query', () => {
+    /** @covers ANL-02-8 */
     it('returns the same records through both routes', async () => {
       await seed(3);
 
@@ -101,6 +102,7 @@ describe('Variant query parity across access routes (e2e)', () => {
       expect(graphql.data.variants.items).toEqual(rest.items.map(asSelected));
     });
 
+    /** @covers ANL-02-8 */
     it('returns them in the same order', async () => {
       await seed(4);
 
@@ -112,6 +114,7 @@ describe('Variant query parity across access routes (e2e)', () => {
       );
     });
 
+    /** @covers ANL-02-8 */
     it('pages equivalently, cursor for cursor', async () => {
       await seed(5);
 
@@ -208,6 +211,7 @@ describe('Variant query parity across access routes (e2e)', () => {
       expect(graphql.errors[0].message).toBe(rest.body.message);
     });
 
+    /** @covers ANL-02-9 */
     it('names the same unknown field on both routes', async () => {
       const rest = await request(server)
         .post('/variants/query')
@@ -226,6 +230,7 @@ describe('Variant query parity across access routes (e2e)', () => {
       expect(graphql.data ?? null).toBeNull();
     });
 
+    /** @covers ANL-02-9 */
     it('names the same unsupported operator on both routes', async () => {
       const rest = await request(server)
         .post('/variants/query')
