@@ -93,9 +93,18 @@ is written down, never silently missing):
   ceilings go in `.escape-hatches.json`; enforced by `.claude/bin/escape-hatch-ratchet.sh`
   from `pre-commit`.
 
-Test-file relaxations are enumerated **per rule with a written reason** — the
-`any`-safety rules at untyped HTTP/GraphQL response boundaries are the legitimate
-case. Never a blanket disable of the correctness rules for `**/*.spec.ts`.
+Test-file relaxations are enumerated **per rule with a written reason**. Two legitimate
+cases, and they are different in kind:
+
+- **Untyped response boundaries** — HTTP/GraphQL payloads the types cannot prove. Debt:
+  it shrinks as the boundary gets modelled.
+- **Negative-path construction** — a test that feeds the wrong type to a validator
+  (`null as unknown as string`) needs a cast, because the type system preventing it is
+  the whole point of the code under test. **Structural, not debt**: its ratchet ceiling
+  should hold, not drain, and the config should say so — a ceiling that invites a cleanup
+  which cannot happen trains people to ignore it.
+
+Never a blanket disable of the correctness rules for `**/*.spec.ts`.
 
 ## Build & verify
 build: `npm run build` · lint: `npm run lint` · types: `npx tsc --noEmit` ·

@@ -1,0 +1,50 @@
+{
+  "_why": "Escape-hatch ratchet: these counts may fall, never rise. Enforced by .claude/bin/escape-hatch-ratchet.sh at pre-commit and pre-pr. Raising a ceiling is a deliberate, reviewable edit to this file — see .claude/skills/_references/quality-gates.md Rule 4. Baseline measured 2026-07-30, BEFORE raising the lint set to strictTypeChecked (TASK-w3n8qr), because raising it is what produces new suppressions.",
+  "scope": ["source/src", "source/test"],
+  "extensions": ["ts"],
+  "patterns": [
+    {
+      "id": "ts-ignore",
+      "regex": "@ts-ignore",
+      "ceiling": 0,
+      "note": "Never permitted: unlike @ts-expect-error it does not expire when the underlying error is fixed."
+    },
+    {
+      "id": "ts-nocheck",
+      "regex": "@ts-nocheck",
+      "ceiling": 0,
+      "note": "Whole-file opt-out. Nothing justifies it."
+    },
+    {
+      "id": "ts-expect-error",
+      "regex": "@ts-expect-error",
+      "ceiling": 0,
+      "note": "The sanctioned form, and there are none today. Ceiling 0 is not a ban: needing one means raising this to 1 with the reason, which is the reviewable act the rule asks for."
+    },
+    {
+      "id": "eslint-disable",
+      "regex": "eslint-disable",
+      "ceiling": 0,
+      "note": "Covers the line, next-line and file-wide forms."
+    },
+    {
+      "id": "prettier-ignore",
+      "regex": "prettier-ignore",
+      "ceiling": 0
+    },
+    {
+      "id": "as-any",
+      "regex": "as any",
+      "ceiling": 0
+    },
+    {
+      "id": "as-unknown-as",
+      "regex": "as unknown as",
+      "ceiling": 5,
+      "note": "All 5 are in tests and 3 are STRUCTURAL, not debt: variant-input.validation.spec.ts feeds deliberately invalid values (null as unknown as string) to the validator, which is the only way that negative-path test can exist. Draining this to 0 is not the goal — holding it at 5 is. The other 2 build a partial NestJS ArgumentsHost."
+    }
+  ],
+  "_not_counted": {
+    "non-null-assertion": "No pattern for `x!` — the test files embed GraphQL documents, where `[VariantOrderInput!]` is GraphQL's own non-null syntax. Every candidate regex counted that as a TypeScript assertion. strictTypeChecked's no-non-null-assertion rule is the right owner (absolute, at the linter, per Rule 1), not a text-matching ratchet."
+  }
+}
