@@ -41,7 +41,10 @@ export class AppExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
     const body = this.describe(exception);
 
-    if (host.getType<'graphql'>() === 'graphql') {
+    // Not `getType<'graphql'>()`: that narrows the return to the literal, which makes
+    // this comparison always-true to the compiler and the HTTP branch below unreachable
+    // — while both run at runtime, since this filter serves both transports.
+    if (host.getType<'graphql' | 'http'>() === 'graphql') {
       // In a GraphQL context there is no response to write to; throwing hands the
       // error to Apollo, which renders it into the `errors` array.
       throw new GraphQLError(body.message, { extensions: { code: body.code } });

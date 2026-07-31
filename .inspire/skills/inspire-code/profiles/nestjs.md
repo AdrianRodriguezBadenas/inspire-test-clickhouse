@@ -54,7 +54,18 @@ logic never lives in a controller.
 anything reaches the operator):
 - `typescript-eslint` **`strictTypeChecked`**, not `recommendedTypeChecked` — it
   brings `no-non-null-assertion` and the stricter `any` rules with it.
-- `complexity` (max 10) · `max-depth` · `max-lines-per-function` · `max-lines`.
+- `max-depth` · `max-lines-per-function` · `max-lines`. Two caveats measured rather than
+  assumed, both about the rule fitting the file kind: `max-lines-per-function` fires on
+  every `describe` block, since a suite callback is a function to the linter — off for
+  test files, with the reason written. `max-lines` fires on field-declaration files (a
+  DTO with 300 property decorators is wide, not complex) — off for `dto/` and generated
+  type modules, in force everywhere else.
+- **`complexity` is deliberately NOT adopted** (Rule 2's third branch). Measured on a real
+  codebase it produced two hits and both were false positives: a `switch` dispatching 12
+  query operators to one-line cases scores 15 cyclomatic while being trivially readable.
+  Cyclomatic complexity counts branches, and a dispatch table is all branches and no
+  complexity; splitting one to satisfy the rule makes the code worse. Adopt a *cognitive*
+  complexity rule instead if the need is real.
 - `eslint-plugin-import`: `import/no-cycle`, plus `import/no-restricted-paths` to make
   the four-layer boundary above a build error instead of a review comment
   (controllers → application → infrastructure; `domain/` imports nothing).

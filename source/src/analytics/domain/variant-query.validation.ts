@@ -96,7 +96,11 @@ export function validateVariantQuery(query: VariantQuery): ValidatedQuery {
 function validateCondition(node: VariantCondition): ValidatedCondition {
   // Discriminate on which key carries a defined value: a GraphQL input node
   // materializes every key of the recursive input type, most of them null.
-  const combinators = [
+  // `branches` is typed `unknown` on purpose. `VariantCondition` declares `and`/`or` as
+  // arrays, but this function is what validates a client-supplied tree — that declaration
+  // is a promise about the input, not a proof of it. Carrying the real (unvalidated)
+  // knowledge here keeps the Array.isArray guard below meaningful instead of dead code.
+  const combinators: { kind: 'and' | 'or'; branches: unknown }[] = [
     { kind: 'and' as const, branches: node.and },
     { kind: 'or' as const, branches: node.or },
   ].filter((candidate) => isPresent(candidate.branches));
@@ -114,13 +118,20 @@ function validateCondition(node: VariantCondition): ValidatedCondition {
     return { kind: 'not', child: validateCondition(node.not as VariantCondition) };
   }
 
-  const combinator = combinators[0];
+  // `.at(0)` rather than `[0]`: indexed access is typed as always-defined while
+  // `noUncheckedIndexedAccess` is off, which makes the guard below look impossible to the
+  // compiler even though the array is empty whenever the node is a leaf. `.at()` returns
+  // `T | undefined` honestly.
+  const combinator = combinators.at(0);
   if (combinator !== undefined) {
-    const branches = combinator.branches as VariantCondition[];
+    const { branches } = combinator;
     if (!Array.isArray(branches) || branches.length === 0) {
       throw invalidQueryCondition('A query condition combinator needs at least one branch.');
     }
-    return { kind: combinator.kind, children: branches.map(validateCondition) };
+    return {
+      kind: combinator.kind,
+      children: (branches as VariantCondition[]).map(validateCondition),
+    };
   }
 
   return validateLeaf(node);
