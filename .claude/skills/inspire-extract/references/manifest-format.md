@@ -3,7 +3,7 @@
 Two shapes: the **per-scanner slice** each of the four scanners returns (Phase 1),
 and the **consolidated manifest** the synthesis builds from them (Phase 2). Both are
 **working state**, staged in the session scratchpad (or an operator-named path) —
-**never committed into `.inspire_kb/`**. The KB holds blessed artifacts; the
+**never committed into `inspire_kb/`**. The KB holds blessed artifacts; the
 manifest is the raw archaeology behind them.
 
 Throughout, a candidate carries a stable local key (`c1`, `c2`, …) used to refer to
@@ -47,6 +47,13 @@ modules_inferred:
   - slug: billing
     prefix: BIL
     source_roots: [src/billing, apps/web/src/pages/billing]
+surfaces_inferred:
+  - id: admin
+    kind: ui
+    evidence: [apps/admin/src]
+  - id: api
+    kind: headless
+    evidence: [apps/api/src]
 ---
 
 ## Module: billing
@@ -123,7 +130,7 @@ modules_inferred:
 - **`key`** — stable within one manifest; cross-references (`covers_features`,
   `realized_by`, `back_source_feature`, `collapse`, `merge:<key>`) use keys.
 - **`evidence`** — `file:line` pointers into the **source** (never into
-  `.inspire_kb/`). This is *provenance* — it explains why a candidate surfaced; it is
+  `inspire_kb/`). This is *provenance* — it explains why a candidate surfaced; it is
   **not** a back-source.
 - **`confidence`** — `high` / `medium` / `low`. Low is a reason to ask, not to hide.
 - **`decision`** — set in Phase 3. Only `keep` / `rename` / `merge` are authored;
@@ -132,6 +139,12 @@ modules_inferred:
   gap: derive/create the feature first (upstream invariant).
 - **`realized_by`** (features) — the screens + actions the feature was derived from;
   drives the authoring order and the cross-layer links.
+- **`surfaces_inferred`** — surface candidates read off `apps/*` and package
+  boundaries, `kind` being one of the three in
+  [`_references/surface-scope.md`](../../_references/surface-scope.md) (`ui` ·
+  `headless` · `lib`). They hand off to `/inspire_surface add` in its *adopt* arrival,
+  which interviews each candidate into the roster; until that add records one, no
+  surface id exists and nothing in the KB may be scoped to it.
 
 ## Provenance in authored artifacts
 

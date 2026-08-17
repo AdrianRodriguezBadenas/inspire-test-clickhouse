@@ -2,17 +2,12 @@
 
 Review a working diff (or a scoped target) for the things a linter **cannot** catch.
 Mechanical checks — formatting, unused imports, `any`/return-type rules, naming,
-line length, import order, promise handling — are the toolchain's job. When one of
-them slips through, the finding is the **missing gate**, not the instance: report it
-as category `Tooling gap`, naming the layer that should own it
-([`../../_references/quality-gates.md`](../../_references/quality-gates.md)) and the
-rule or tool from the active profile's `## Quality gates`. Never re-read by hand what
-a machine could refuse once. This skill spends its tokens only on judgment.
+line length, import order, promise handling — are the toolchain's job; if they are
+slipping through, that is a tooling gap to fix, not a thing to review by hand. This
+skill spends its tokens only on judgment.
 
 `review` is **read-only**: it reports, ranks, and names the fix (and the skill to
-run for it). It never edits code — with one bounded exception, the mutation drill in
-Phase 4, which applies and immediately reverts one mutation at a time and must leave
-the tree exactly as it found it.
+run for it). It never edits code.
 
 ## Workflow
 
@@ -35,8 +30,9 @@ terms, judge it against what the KB says it must be:
 - **Action descriptor** (`04_domain/{module}/{entity}/`) — does the code satisfy
   the contract: inputs, outputs, touched entities, invariants, declared error set?
   Flag behavior that exceeds or contradicts the descriptor.
-- **ADR** (`01_adr`) — does the diff contradict an `accepted` ADR within its
-  maturity's reach? If it claims to move an ADR to `implemented`, is the claim true?
+- **ADR** (`01_adr`) — does the diff contradict a current ADR (present, not
+  superseded or rejected) within its maturity's reach? If it claims to move an ADR to
+  `implemented`, is the claim true?
 
 A disagreement here is not automatically a code bug — it may be a spec gap. Classify
 it: **code wrong → fix in the diff; spec wrong/missing → hand back** to
@@ -73,17 +69,6 @@ format in [`../../_references/findings-format.md`](../../_references/findings-fo
 - Meaningful edge cases covered — not just the happy path.
 - One test = one scenario; mocks are at the right boundary, not over-mocked.
   (Conventions in [`tdd.md`](tdd.md).)
-- **Weak assertions are the finding.** A test that runs the new logic and asserts
-  `toBeDefined`, a bare truthiness, or a matcher loose enough to accept a wrong value
-  passes CI while proving nothing. Where the diff's tests look like that, say which
-  mutation would survive them — that is the concrete claim, not "tests are weak".
-
-**Mutation drill on demand.** When the diff is critical (auth, payments, data
-mutations, an integration) or its tests read as weak, run the drill from
-[`tdd.md`](tdd.md) step 6 against the changed files — *this is the one exception to
-`review` being read-only*: it edits, reverts each mutation immediately, and must leave
-`git diff` byte-identical to how it found it. Report survivors; never leave a mutation
-in the tree. Skip it when the suite is red — a survivor is meaningless then.
 
 ## Build verification
 
@@ -108,6 +93,7 @@ row format below. The dimensions:
 | tests | Coverage of new logic, edge cases, mocking correctness, a regression test for each fix |
 | duplication | Copy-pasted / >70%-similar logic across files; propose unification |
 | dead-code | Unused exports/vars/types, orphaned files, commented-out blocks left behind by the change |
+| surface-boundaries | Only when a surface roster exists (`00_bootstrap/surfaces.md`): an import reaching from one surface's `Package` path into another's — cross-surface sharing belongs in a `lib` package |
 
 **Add one agent per active stack profile's `## Review focus` entry** (e.g.
 api-contract, styling, a11y, security) — the stack-concrete lenses layered on top of
@@ -127,8 +113,6 @@ runs the full fan-out. Keep dimensions read-only.
 - Hand-backs: {none | /inspire_domain <id>: <why>; /inspire_feature <id>: <why>}
 
 ### Tooling: lint {PASS/FAIL} · types {PASS/FAIL} · build {PASS/FAIL} · tests {PASS/FAIL}
-Escape hatches: {n} (ceiling {m}) — {new ones in this diff, file:line, with their reason}
-Mutation drill: {not run | k mutations, n survived} — {file:line — mutation → the missing test}
 
 ### Issues (judgment-based)
 | Severity | Category | File:Line | Description | Fix |
@@ -136,14 +120,10 @@ Mutation drill: {not run | k mutations, n survived} — {file:line — mutation 
 | BLOCKING | Security | src/foo:42 | Hardcoded API key | Move to env var |
 | BLOCKING | Correctness | src/bar:15 | Race on concurrent update | Optimistic lock |
 | WARNING | Architecture | src/baz:8 | Business logic in controller | Move to service — `/inspire_code tdd` |
-| WARNING | Tooling gap | eslint.config | Layer boundary reviewed by hand | `import/no-restricted-paths` |
 
 ### Verdict: READY | NEEDS FIXES ({n} blocking, {m} warnings)
 ```
 
 `BLOCKING` = must fix before merge (security, correctness, KB contradiction).
 `WARNING` = should fix. Always name the file:line and the concrete fix (and the
-skill to run when the fix is a hand-back). A `Tooling gap` points at the config that
-should own the rule, not at the code that broke it. An escape hatch added by the diff
-without a written reason, or one that pushes the count past its ceiling, is
-`BLOCKING` — the hatch itself is legitimate, going silent or over the ceiling is not.
+skill to run when the fix is a hand-back).

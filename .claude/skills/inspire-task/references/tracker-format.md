@@ -5,13 +5,13 @@ truth** — no generated indexes or caches.
 
 ## Storage layout
 
-- **Open tickets** → `.inspire_kb/99_tracker/tickets/TASK-{id}.md`
+- **Open tickets** → `inspire_kb/99_tracker/tickets/TASK-{id}.md`
 - **Closed tickets** (`status` ∈ {`Done`, `Cancelled`}) →
-  `.inspire_kb/99_tracker/tickets/archive/TASK-{id}.md`
+  `inspire_kb/99_tracker/tickets/archive/TASK-{id}.md`
 
 The archive subfolder keeps the active set lean: agents scanning "what's pending"
-read only `.inspire_kb/99_tracker/tickets/*.md` (top-level, non-recursive). The
-Kanban web (`.inspire_kb/99_tracker/serve.mjs`) reads both locations. `close`
+read only `inspire_kb/99_tracker/tickets/*.md` (top-level, non-recursive). The
+Kanban web (`inspire_kb/99_tracker/serve.mjs`) reads both locations. `close`
 moves the file; `show` / `update` look in `tickets/` first, then `tickets/archive/`.
 
 ## Frontmatter schema
@@ -32,6 +32,7 @@ skills: [prototype, screens]            # which layer skills execute the work
 status: Open                       # Open | Done | Cancelled
 blocked_by: []                     # list of ticket / feature / ADR IDs
 related_to: [TASK-xxx]             # list of IDs
+surfaces: [portal, admin]          # optional — see enum below
 ---
 
 ## Description
@@ -41,7 +42,7 @@ related_to: [TASK-xxx]             # list of IDs
 ## Enums
 
 - **`epic`**: a **project-defined** slug — usually a module from
-  `.inspire_kb/03_features/`, plus cross-cutting areas. Recommended baseline:
+  `inspire_kb/03_features/`, plus cross-cutting areas. Recommended baseline:
   `workspace | meta | tooling | docs | skill-feedback`, extended with the
   project's own module slugs.
 - **`size`**: `S | M | L | XL`
@@ -50,8 +51,12 @@ related_to: [TASK-xxx]             # list of IDs
   not yet done, `Done` = completed and verified, `Cancelled` = won't do (reason in
   body).
 - **`skills`** (multi-select, may be empty): `bootstrap | module | feature |
-  domain | screens | prototype | workspace | adr | task | code` — which skills cover
-  the work. `[]` means the work doesn't map to a skill (tooling, ops, packaging).
+  domain | screens | prototype | workspace | adr | task | code | surface` — which
+  skills cover the work. `[]` means the work doesn't map to a skill (tooling, ops,
+  packaging).
+- **`surfaces`**: optional — a list of roster ids or `all`; useful for filtering suite
+  work, never required. Semantics per
+  [`_references/surface-scope.md`](../../_references/surface-scope.md).
 
 ## ID scheme
 

@@ -12,6 +12,11 @@ UI/UX criteria, fast and interactively. It answers *"is this the right thing to
 build?"* — the code is throwaway; the **clarity is the deliverable**, and that
 clarity lands in the vault.
 
+> **Where the prototype lives is configurable.** `prototype/` is the default; the
+> operative root is `prototype_root` in `00_bootstrap/stack.md`. A project with no
+> horizontal prototype sets `prototype_root: none`. Resolve it rather than assuming
+> `prototype/` — see [`_references/product-roots.md`](../_references/product-roots.md).
+
 > **Agile on purpose.** No tests, no auth, no persistence, minimal controls — only
 > what's needed to *learn*. Rigor (tests, error handling, robustness) is reserved
 > for real implementation in [`/inspire_code`](../inspire-code/SKILL.md). Building
@@ -23,24 +28,47 @@ clarity lands in the vault.
 > their own external repos answering *"can we build it as we think?"* →
 > [`/inspire_spike`](../inspire-spike/SKILL.md).
 
+## Multi-surface suites
+
+`/prototype` stays **one root, one running artifact** no matter how many
+surfaces the suite declares — it never forks into separate prototype projects.
+What changes is what lives inside it: once the roster carries 2+ `kind: ui`
+entries (see
+[`_references/surface-scope.md`](../_references/surface-scope.md)), the
+prototype holds **one shell per UI surface**, each mounted at that surface's
+roster `Shell` prefix, behind a **suite landing** — a branded entry page that
+presents the suite as one product and routes into each shell.
+
+The landing is **prototype chrome by default**: this skill derives it from the
+roster (each UI surface's display name, kind, and shell link) and renders it
+under the suite design system, re-syncing it whenever the roster changes —
+there is no separate spec for it to drift from. If the product genuinely ships
+its own launcher, spec it as a normal screen — typically under
+`05_screens/shared/` — and it replaces the chrome landing; the roster remains
+this skill's source for the chrome fallback either way.
+
+Mobile UI surfaces mock as **framed web shells** — a phone-frame wrapper
+around the same web stack, not a native build. Still "wide, shallow, mocked":
+adding surfaces widens the prototype, it doesn't deepen it.
+
 ## Building the prototype
 
 Build it **pattern-driven from the KB**. Before writing code, read the layers that
 describe the screen:
 
-1. **Screen spec** — `.inspire_kb/05_screens/{module}/{screen}.md` — the source of
+1. **Screen spec** — `inspire_kb/05_screens/{module}/{screen}.md` — the source of
    truth for what to build (features covered, pattern, data, slots, components).
-2. **Pattern** — `.inspire_kb/05_screens/patterns/{pattern}.md` — layout, slots, behavior.
-3. **Components** — `.inspire_kb/05_screens/components/{component}.md` — the shared
+2. **Pattern** — `inspire_kb/05_screens/patterns/{pattern}.md` — layout, slots, behavior.
+3. **Components** — `inspire_kb/05_screens/components/{component}.md` — the shared
    catalog. Adopt these; don't reinvent.
-4. **Design system** — `.inspire_kb/05_screens/design-system.md` — tokens, type,
+4. **Design system** — `inspire_kb/05_screens/design-system.md` — tokens, type,
    density. Never redefine these per screen.
-5. **Intent & contract** — the feature in `.inspire_kb/03_features/{module}/…`
-   and, where relevant, the specs in `.inspire_kb/04_domain/…`.
+5. **Intent & contract** — the feature in `inspire_kb/03_features/{module}/…`
+   and, where relevant, the specs in `inspire_kb/04_domain/…`.
 
 > **Stack-agnostic.** This skill assumes no framework. The project's own stack,
 > component catalog, conventions and known pitfalls live in its KB
-> (`.inspire_kb/00_bootstrap` and `.inspire_kb/05_screens`), not here — read those
+> (`inspire_kb/00_bootstrap` and `inspire_kb/05_screens`), not here — read those
 > first on a real project.
 
 ## The learnings loop — insights co-evolve the vault, live
@@ -102,6 +130,8 @@ loop stay the user's.
 - Every horizontal screen traces to a screen spec (or declares "not implemented yet").
 - No reinvented UI that duplicates the shared component catalog.
 - The affected route **runs**, not just builds.
+- With 2+ UI surfaces, the suite landing exists, lists every UI surface's shell,
+  and stays synced with the roster.
 - Every insight the session surfaced landed in a real vault artifact
   (feature/screen/component/ADR/design-system/task).
 

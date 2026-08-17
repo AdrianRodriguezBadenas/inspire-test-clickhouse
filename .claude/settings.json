@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh"
+            "command": "$CLAUDE_PROJECT_DIR/.claude/inspire/hooks/session-start.sh # INSPIRE-MANAGED"
           }
         ]
       }
@@ -16,11 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-commit.sh"
-          },
-          {
-            "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-pr.sh"
+            "command": "$CLAUDE_PROJECT_DIR/.claude/inspire/hooks/dispatch.sh # INSPIRE-MANAGED"
           }
         ]
       }

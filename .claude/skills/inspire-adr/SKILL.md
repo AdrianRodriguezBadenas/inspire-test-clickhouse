@@ -1,14 +1,16 @@
 ---
 name: inspire-adr
-description: "ADR lifecycle for architectural decisions that span ≥2 modules: create / update / promote / supersede along a maturity ladder (design → prototyped → implemented). Use when proposing, recording, advancing, or retiring an architectural decision."
+description: "ADR lifecycle for architectural decisions that span two or more modules or surfaces, or are system-wide: create / update / promote / supersede along a maturity ladder (design → prototyped → implemented). Use when proposing, recording, advancing, or retiring an architectural decision."
 ---
 
 # /inspire_adr — Architecture Decision Records
 
 ## Scope
 
-An **ADR** records an architectural decision that spans **≥2 modules**, stored in
-[`.inspire_kb/01_adr/`](../../../.inspire_kb/01_adr). This skill owns their full
+An **ADR** records a decision that spans **≥2 modules or ≥2 surfaces**, or is
+system-wide — a per-surface ADR spanning two modules within that surface is legal.
+ADRs are stored in
+[`inspire_kb/01_adr/`](../../../inspire_kb/01_adr). This skill owns their full
 lifecycle. It does **not** run the global review — [`/inspire_workspace review`](../inspire-workspace/SKILL.md)
 checks that an ADR's consequences have actually propagated; this skill authors and
 advances the decisions themselves.
@@ -50,16 +52,44 @@ happens in chat before authoring.
   `adr-{slug}.md` for cross-cutting. Slug-only — no numeric prefix.
 - **Slug uniqueness:** unique within a prefix; cross-cutting slugs unique
   vault-wide.
-- **Location:** `.inspire_kb/01_adr/`.
+- **Location:** `inspire_kb/01_adr/`.
 - **Canonical ID:** the filename (without `.md`). The H1 is the human title.
+- **Blast radius:** the `surfaces:` frontmatter field the template below carries.
+  The filename keeps encoding **module** scope and `**Modules affected:**` keeps
+  listing the modules; the frontmatter declares **surface** scope. Three
+  independent statements, none replacing another. Semantics — what an absent field
+  means, when it becomes mandatory, how a surface id resolves — live in
+  [`_references/surface-scope.md`](../_references/surface-scope.md) and are not
+  restated here.
 
 **Rationale.** Numeric prefixes collide under parallel work (two branches grab the
 same next number). Slug-only filenames are collision-free by construction
 (mirroring the `TASK-{id}` convention).
 
+### The API-partition ADR
+
+A named pattern for a suite with several capability-owning services. *Which
+service serves which modules* is one architectural decision, and it is recorded in
+one **API-partition ADR** — never scattered across the domain, which stays a
+single untagged truth. The partition is **module-granular** ("the admin service
+serves `tenancy` and `quotas`; the platform service serves the rest"), with
+`surfaces:` listing the services it partitions between (capability-owning
+`headless` roster entries). Overlap is allowed — a read path may be served by
+both. One service serving everything needs no such ADR at all; the partition is a
+deployment-topology choice, free to change without touching the KB's knowledge.
+
+Action-granular partition pressure — one module's actions splitting across
+services — is a modularity smell: split the module (`inspire-module`), do not tag
+actions. BFFs are adapters, not capability owners: they consume the domain and
+never appear in the partition.
+
 ### Template
 
 ```markdown
+---
+surfaces: [portal, admin]   # blast radius — list of roster ids, or `all`
+---
+
 # {Title}
 
 **Status:** design
@@ -90,10 +120,11 @@ What follows — positive and negative. Include breaking changes.
 
 ### Steps
 
-1. **Ask** the user: short title, modules affected, context, the decision, key
-   consequences, alternatives considered.
+1. **Ask** the user: short title, modules affected, blast radius (the `surfaces:`
+   field — see Conventions; a suite-of-one is never asked), context, the decision,
+   key consequences, alternatives considered.
 2. **Write the ADR file** at the computed path.
-3. **Update `.inspire_kb/01_adr/_index.md`** — add a row to the appropriate module
+3. **Update `inspire_kb/01_adr/_index.md`** — add a row to the appropriate module
    section (or Transversales for cross-cutting).
 4. **Propose ADR references** in the feature files that should link to it: list
    files to edit, wait for approval.
@@ -124,6 +155,9 @@ consequences to the layers the new maturity reaches.
    decision, then for each affected module invoke `/inspire_module review {module}`
    to detect where the ADR's consequences are not yet reflected. Surface the gaps
    as follow-up actions.
+4. **Propose endorsement.** Ask the operator whether to endorse the promoted
+   ADR; on an explicit yes, run `.inspire/bin/trust.sh endorse <file>`
+   ([trust-stamps](../_references/trust-stamps.md#endorsement)).
 
 ## Subcommand: supersede {id} {new-id}
 
@@ -133,8 +167,8 @@ via `create`).
 1. Verify both ADRs exist (the old one at any non-terminal maturity).
 2. Update the old ADR: `**Status:** superseded by [[{new-id}]]`.
 3. Update the new ADR's header: `Supersedes: [[{old-id}]]`.
-4. Grep `.inspire_kb/` for references to the old ADR; propose updates.
-5. Update `.inspire_kb/01_adr/_index.md` (move the old entry to the superseded
+4. Grep `inspire_kb/` for references to the old ADR; propose updates.
+5. Update `inspire_kb/01_adr/_index.md` (move the old entry to the superseded
    section).
 
 ## Rules
@@ -159,6 +193,11 @@ via `create`).
    time it was made; don't narrate migration history.
 6. **Consult the task tracker** ([`/inspire_task list`](../inspire-task/SKILL.md))
    for tracked items; don't re-open what's already ticketed.
+7. **Stamp every write.** After an ADR is written, run
+   `.inspire/bin/trust.sh stamp <file> --skill adr`
+   ([trust-stamps](../_references/trust-stamps.md#stamping)); rewriting an ADR
+   that carries `endorsed:` is disclosed to the operator first
+   ([trust-stamps](../_references/trust-stamps.md#endorsement)).
 
 ## Related skills
 

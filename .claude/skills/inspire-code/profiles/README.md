@@ -9,7 +9,7 @@ the KB (`00_bootstrap` → `04_domain`) is the source of truth, and they load
 ## Resolution
 
 At the start of any subcommand, `inspire-code` resolves the active profile set from
-[`00_bootstrap/stack.md`](../../../../.inspire_kb/00_bootstrap/stack.md):
+[`00_bootstrap/stack.md`](../../../../inspire_kb/00_bootstrap/stack.md):
 
 1. **Deterministic** — if `stack.md`'s frontmatter declares `profiles: [<id>, …]`,
    use that set. `/inspire_bootstrap stack` maintains this line.
@@ -22,7 +22,9 @@ subcommand runs **purely generic** and says so — offering `/inspire_bootstrap`
 scaffold one. Missing profiles never block.
 
 Profiles are **composable**: a React + NestJS monorepo loads both, and each
-subcommand applies whichever profile owns the layer it is working in.
+subcommand applies whichever profile owns the layer it is working in — or, when a
+surface roster exists, whichever profile the target surface declares in its
+`Profiles` field (`inspire-code` SKILL.md, *Surfaces and the monorepo*).
 
 ## File format
 
@@ -49,14 +51,6 @@ and the authoring rules in `tdd`.
 Extra dimensions `review` adds to its fan-out for this stack (e.g. api-contract,
 styling, a11y, security). Each is a lens name + one line of what it hunts for.
 
-## Quality gates
-The concrete tools and rules that mechanically enforce this stack's share of
-[`_references/quality-gates.md`](../../_references/quality-gates.md): which lint
-rules, which coverage tooling, which of them are absolute vs ratcheted, and which
-suppression syntax counts as this stack's escape hatch. A rule that does not hold for
-this stack is listed as **dropped with its reason**, never left out silently. Names
-tools and rules only — never an org's server or pipeline.
-
 ## Build & verify
 The concrete lint / type-check / build / test commands. `fix-build`, `review`, and
 `debug` use these instead of guessing.
@@ -73,7 +67,6 @@ Pointers to deeper files under `profiles/{id}/references/`, read only when neede
 | `## Test conventions` | `tdd` · `review` Phase 4 |
 | `## Forbidden patterns` | `review` · `tdd` authoring rules |
 | `## Review focus` | `review` fan-out (extra dimensions) |
-| `## Quality gates` | `/inspire_bootstrap stack` (installs them) · `review` (missing-gate findings) |
 | `## Build & verify` | `fix-build` · `review` build step · `debug` |
 
 ## Authoring rules for profiles
@@ -86,7 +79,16 @@ Pointers to deeper files under `profiles/{id}/references/`, read only when neede
 - **No product vocabulary.** A profile that a different React project could not
   reuse verbatim has leaked something that isn't a framework convention.
 - **The template ships lean defaults** (`react`, `nestjs`) matching the seeded
-  reference stack; a fork adds or replaces profiles for its own frameworks by
-  dropping `profiles/{id}.md` here (versioned in `.inspire/`, like all runtime).
+  reference stack; a project adds or replaces profiles for its own frameworks by
+  dropping `profiles/{id}.md` here — inside the runtime, at
+  `.claude/skills/inspire-code/profiles/`.
+
+> **A profile you author here survives `/inspire:update`.** This directory sits
+> inside a skill directory INSPIRE owns, but an update classifies content against
+> the manifest of the version it is upgrading *from* — and a profile INSPIRE never
+> shipped appears in no manifest, so it classifies as yours and is neither replaced
+> nor deleted. Pre-0.3 `install.sh` did destroy these files; that is fixed, not a
+> roadmap item. Keep yours in version control anyway, as you would any other source
+> file.
 
 See [`_example.md`](_example.md) for an annotated skeleton.
