@@ -3,130 +3,148 @@
 This repository is a **fork of the INSPIRE template, instantiated as a live
 project** — a ClickHouse-backed analytics service (see [README.md](README.md)).
 INSPIRE is a software engineering methodology for the agentic era; the manual is at
-[inspire.openbims.dev](https://inspire.openbims.dev).
+[inspire.openbims.dev](https://inspire.openbims.dev), and the runtime is developed at
+[github.com/Genomcore/inspire](https://github.com/Genomcore/inspire).
 
 It wears two hats, and confusing them is the main way to get this repo wrong:
 
-- **A product.** `.inspire_kb/` holds this project's real knowledge base, `source/`
-  its production code. The guardrail runtime is **live** in `.claude/`.
+- **A product.** `inspire_kb/` holds this project's real knowledge base, `source/`
+  its production code. The guardrail runtime is **live**.
 - **An upstream contributor.** Improvements to the methodology made here are meant to
-  flow back to INSPIRE core, which is why the runtime is still edited at its versioned
-  source (`.inspire/`) rather than in the deployed copy.
+  flow back to INSPIRE core — but since 0.3 that happens through a **pull request to the
+  plugin repo**, not by editing a staged copy in this repo. See *Contributing upstream*.
+
+**Runtime version: 0.6.0** (see `.inspire.lock`). This fork was upgraded from 0.1.0 on
+2026-08-17; the layout below is the post-upgrade one, and it is different in almost every
+path from the pre-0.3 layout that older commits describe.
 
 ## Structure
 
 The convention: **dotfolders = INSPIRE scaffolding**, non-dot dirs = the product
 you build on top of it.
 
-- `.inspire/` — the **guardrail runtime**, staged dormant (see below):
-  - `.inspire/skills/` — the 13 agent skills (`inspire-*`): the judgment half of
-    the runtime, in three families:
-    - **Specification** (7) — capture what the product is and why: `module` ·
-      `feature` · `domain` · `screens` · `prototype` (horizontal mock) · `spike`
-      (external verticals) · `adr`.
-    - **Codification** (1) — `inspire-code`: the coding stage that turns the KB into
-      production code under `source/` (subcommands `tdd` · `review` · `debug` ·
-      `fix-build` · `fix-vulns`), always re-anchoring to the ADRs, descriptors and
-      acceptance criteria that specify it, and handing drift back to the specifying
-      skills. Stack-agnostic, layering optional **stack profiles**
-      (`inspire-code/profiles/`, resolved on demand from `00_bootstrap/stack.md`) —
-      the template ships lean `react` + `nestjs` defaults; a fork adds its own.
-    - **Housekeeping** (5) — set up and keep the workspace coherent: `bootstrap`
-      (greenfield foundation: language, stack, theme + the live design system),
-      `extract` (brownfield onboarding — fan out scanners over an existing codebase
-      into KB candidates), `task` (the ticket tracker), `workspace` (the pre-PR
-      global review + vault structure), `learn` (the skill-learnings journal —
-      write-once, timestamp-named, version-stamped insights about the skills
-      themselves, captured in a fork and bound upstream to INSPIRE core).
-  - `.inspire/bin/` — the validators + golden fixtures: the mechanical half. Spec
-    root is configurable via `SDD_SPEC_ROOT` (defaults to `.inspire_kb/04_domain`).
-    Test suite: `bash .inspire/bin/test/run-tests.sh`.
-  - `.inspire/hooks/` — enforcement hooks: git-time `pre-commit` / `pre-pr`, and
-    `session-start` (injects the project's `output_language` — and the runtime
-    version from `.inspire.lock` — into every session).
-  - `.inspire/templates/` — files materialized on the product side at
-    instantiation (the `prototype/` + `source/` README stubs).
-  - `.inspire/install.sh` — the instantiation script.
-  - `.inspire/manifest.json` — the runtime **release identity** (`version` +
-    `released`); `install.sh` freezes it into a fork's root `.inspire.lock`
-    (provenance: which release the fork was instantiated from), which `inspire-learn`
-    stamps onto every learning.
-- `.inspire_kb/` — **this project's knowledge base**, not an empty skeleton: the
+- `.claude/skills/` — the **14 agent skills** (`inspire-*`): the judgment half of the
+  runtime, in three families:
+  - **Specification** (8) — capture what the product is and why: `module` · `feature` ·
+    `domain` · `screens` · `surface` (the suite's surface roster) · `prototype`
+    (horizontal mock) · `spike` (external verticals) · `adr`.
+  - **Codification** (1) — `inspire-code`: the coding stage that turns the KB into
+    production code under `source/` (subcommands `tdd` · `review` · `debug` ·
+    `fix-build` · `fix-vulns`), always re-anchoring to the ADRs, descriptors and
+    acceptance criteria that specify it, and handing drift back to the specifying
+    skills. Stack-agnostic, layering optional **stack profiles**
+    (`inspire-code/profiles/`, resolved on demand from `00_bootstrap/stack.md`).
+  - **Housekeeping** (5) — set up and keep the workspace coherent: `bootstrap`
+    (foundation: language, stack, theme + the live design system), `extract`
+    (brownfield onboarding), `task` (the ticket tracker), `workspace` (the pre-PR
+    global review + vault structure), `lesson` (the lessons catalog).
+  - Shared references live in `.claude/skills/_references/`.
+- `.inspire/bin/` — the validators + golden fixtures: the mechanical half. Spec root is
+  configurable via `SDD_SPEC_ROOT` (defaults to `inspire_kb/04_domain`).
+  Test suite: `bash .inspire/bin/test/run-tests.sh` (56 cases).
+- `.claude/inspire/hooks/` — enforcement hooks. `dispatch.sh` is the single
+  `PreToolUse`/Bash entry point registered in `.claude/settings.json`; it routes by
+  command pattern to `pre-commit.sh` (on `git commit`) and `pre-pr.sh` (on
+  `gh pr create`). `session-start.sh` injects the project's `output_language` and the
+  runtime version into every session.
+- `.inspire.lock` — the fork's provenance: which release this project was materialized
+  from. Written by the upgrade, never by hand.
+- `inspire_kb/` — **this project's knowledge base**, not an empty skeleton: the
   navigable graph the product is specified in, and the source of truth the code is
   judged against. One layer per skill (`00_bootstrap`, `01_adr`, `02_modules`,
-  `03_features`, `04_domain`, `05_screens`, `06_spikes`, `98_skill_learnings`, `99_tracker`); each folder carries a
-  README explaining its purpose and layout.
-- `.manual/` — the INSPIRE **microsite / manual** (canonical explanation;
-  published at inspire.openbims.dev; source here — open `.manual/index.html`).
-The two product-side dirs below are the product, not INSPIRE. They **exist here**,
-created by `install.sh` from `.inspire/templates/` when this fork was instantiated, and
-re-running it leaves them alone:
+  `03_features`, `04_domain`, `05_screens`, `06_spikes`, `98_lessons`, `99_tracker`);
+  each folder carries a README explaining its purpose and layout.
+  `98_skill_learnings/` is a **closed archive** — the pre-0.6 long-form learnings, kept
+  for the upstream conversation; see its README.
+- `inspire-carryover/` — the record of **this fork's runtime delta** against the 0.1.0
+  base: the five local themes as verbatim files plus one patch per modified file. It is
+  the material for the upstream PR, and the reason the upgrade could take the 0.6.0 base
+  everywhere without losing anything.
+- `.manual/` — the INSPIRE **microsite / manual** (open `.manual/index.html`).
 
-- `prototype/` — the **horizontal prototype** (product-side, non-dot): the wide,
-  shallow, mocked working model of the whole product. It keeps **no KB file** — its
-  insights co-evolve the vault directly (features, screens, ADRs, design system).
-  Vertical spikes live in their own external repos, their knowledge brought home
-  under `.inspire_kb/06_spikes/` (skill `inspire-spike`).
-- `source/` — the **production monorepo** (product-side, non-dot): the root of the
-  actual product code, realized from the KB. An ADR reaches `implemented` maturity
-  when it lands here.
+The two product-side dirs below are the product, not INSPIRE:
 
-### Template vs deployed layout — why the runtime is staged in `.inspire/`
-
-Claude Code auto-loads skills from `.claude/skills/` and runs hooks registered in
-`.claude/settings.json`. The skills also reference each other and the validators via the
-**deployed** paths (`.claude/skills/…`, `.claude/bin/…`). In the upstream template the
-runtime is staged **dormant** under `.inspire/` so the skills do not fire while the
-template itself is being edited.
-
-**Here the runtime is live**, and `.inspire/` keeps a second job: it is the versioned
-source a fork edits, so an improvement can be promoted upstream. That is why the two
-trees exist side by side in this repo, and why editing the deployed one is a mistake
-rather than a shortcut.
-
-Deploying (or re-deploying, after editing `.inspire/`) is one command:
-
-```bash
-bash .inspire/install.sh
-```
-
-It copies `.inspire/{skills,bin,hooks}` → `.claude/{skills,bin,hooks}`, makes the
-scripts executable, and re-freezes `.inspire.lock` with the deploying commit. The rest
-of its steps are **create-if-absent, never clobber**, so on an already-instantiated fork
-like this one they all report "left as-is": the hooks in `.claude/settings.json`, the
-live `05_screens/design-system.md`, `prototype/`, `source/`, and the project's own
-`README.md` (it only removes the *template's* methodology README, recognised by its
-tagline).
-
-So re-running it is routine, not risky — it is how an edit under `.inspire/` becomes the
-runtime that actually executes. The one thing it does overwrite is `.claude/{skills,bin,
-hooks}`, which is precisely why nothing should ever be edited there.
+- `prototype/` — the **horizontal prototype**: the wide, shallow, mocked working model
+  of the whole product. It keeps **no KB file** — its insights co-evolve the vault
+  directly (features, screens, ADRs, design system). Vertical spikes live in their own
+  external repos, their knowledge brought home under `inspire_kb/06_spikes/`.
+- `source/` — the **production monorepo**: the root of the actual product code, realized
+  from the KB. An ADR reaches `implemented` maturity when it lands here.
 
 ## Working in this repo
 
-- **Edit the runtime in `.inspire/`, never in `.claude/`.** `.inspire/` is the
-  versioned source; `.claude/` is a deployed copy that `install.sh` **overwrites**, so
-  an edit made there is lost on the next deploy and never reaches upstream. This is the
-  single most important rule in this file.
-- **Deploy with `bash .inspire/install.sh`.** It is idempotent and safe to re-run: it
-  copies `.inspire/{skills,bin,hooks}` → `.claude/`, and leaves `prototype/`, `source/`,
-  the project `README.md`, the live design system and an existing `settings.json`
-  untouched. It also re-freezes `.inspire.lock` with the deploying commit, which is the
-  fork's provenance record. Until it runs, the hooks and the skills keep executing the
-  previous version — a fixed rule that has not been deployed is not in force.
+- **The runtime is materialized into this project, and you edit it in place.** Skills at
+  `.claude/skills/`, validators at `.inspire/bin/`, hooks at `.claude/inspire/hooks/`.
+  There is **no staging copy and no deploy step** — an edit is in force as soon as it is
+  saved.
+  > Commits before 2026-08-17 say the opposite ("edit `.inspire/`, never `.claude/`") and
+  > tell you to run `.inspire/install.sh`. Both were true of the pre-0.3 layout and are
+  > wrong now: `install.sh` no longer exists, and `.inspire/skills/` has been deleted.
 - A restart of Claude Code is **not** needed for skill or hook *content* (both are read
   when they run), only when a brand-new skill directory is added, since the available-
   skills list is built at session start.
 - **Keep the runtime generic.** The skills and validators must stay stack-agnostic and
   free of this product's domain vocabulary — that is what keeps them promotable
-  upstream. This project's concrete content belongs in `.inspire_kb/` and `source/`, and
-  its stack-specific rules in a `inspire-code/profiles/` profile, never inlined in a
+  upstream. This project's concrete content belongs in `inspire_kb/` and `source/`, and
+  its stack-specific rules in an `inspire-code/profiles/` profile, never inlined in a
   skill.
-- **Record methodology insights** with `/inspire_learn note` — write-once, version-
-  stamped, so a change made here can be carried to INSPIRE core with its reasoning
-  intact.
+- **Record methodology insights** with `/inspire_lesson note` — write-once, version-
+  stamped. A lesson is a **single imperative line** that gets materialized into the
+  skill; if the intent needs a paragraph, it is two lessons.
 - Run the validator suite with `bash .inspire/bin/test/run-tests.sh` after touching
   anything under `.inspire/bin/`.
+
+### This fork's local runtime additions
+
+Five themes live here that **INSPIRE 0.6.0 does not ship**. Treat them as part of the
+runtime, and keep them working when you change anything nearby:
+
+1. **Escape-hatch ratchet** — `.inspire/bin/escape-hatch-ratchet.sh`: deliberate rule
+   suppressions in `source/` may fall, never rise. Ceilings in `.escape-hatches.json`.
+   Wired into `pre-commit` (scoped) and `pre-pr` (unscoped).
+2. **Nothing untested** — `criteria-have-tests.sh` (every acceptance criterion carries a
+   stable id claimed by a test via `/** @covers {id} */`) and
+   `declared-errors-tested.sh` (every declared error appears as a literal in a test).
+   Both lifecycle-progressive; both wired into `pre-pr`. Shared test discovery lives in
+   `_lib.sh`, deliberately, so the two cannot disagree on what a test file is.
+3. **Quality-gate layering** — `_references/quality-gates.md` plus a `## Quality gates`
+   section in each stack profile.
+4. **The mutation drill** — `inspire-code/references/tdd.md` step 6, and the reason this
+   project has no Stryker: the drill is per-diff, with the agent as the mutation engine.
+5. **Surface conventions** — `_references/conventions/`: what a caller observes per
+   logical error, decided once at bootstrap. Note the collision: 0.6.0's own
+   `_references/surface-scope.md` uses *surface* for a deliverable (`ui`/`headless`/
+   `lib`), which is a different concept from a wire contract.
+
+### Updating the runtime
+
+The runtime is delivered as a Claude Code plugin, but **installing the plugin is not
+required** — `materialize.sh` takes a plain path:
+
+```bash
+git clone https://github.com/Genomcore/inspire.git <path>
+bash <path>/plugin/scripts/materialize.sh --mode plan \
+  --plugin-root <path>/plugin --project-root "$(git rev-parse --show-toplevel)"
+```
+
+`--mode plan` is read-only. `--mode update` performs it, and resolves each conflicted
+file from the command line: `--take-base <path>` takes the new release's version,
+`--take-mine <path>` keeps ours, and an unresolved conflict keeps ours. Nothing is
+registered in any config unless `--declare-marketplace` is passed.
+
+**Before upgrading, extract this fork's runtime delta first** — a layout hop retires the
+tree the edits live in, and the per-file diff against the old base is only cheap
+beforehand. `inspire-carryover/` is what that produced last time.
+
+### Contributing upstream
+
+Promotion is a **PR to `Genomcore/inspire` against `plugin/base/…`** — the runtime's
+source no longer lives in this repo. Two consequences worth knowing:
+
+- `bin/test/` is never materialized into a project from 0.3 on, so a new validator's
+  golden fixtures have no home here; they arrive with the PR. This fork keeps its own
+  suite running from `.inspire/bin/test/` regardless.
+- Nothing in this repo pushes anything anywhere. Upstream reads a fork by pulling it.
 
 ## Touching `source/` — read this before writing a test
 
