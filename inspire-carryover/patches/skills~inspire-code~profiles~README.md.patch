@@ -1,0 +1,27 @@
+diff --git a/skills/inspire-code/profiles/README.md b/skills/inspire-code/profiles/README.md
+index e734092..d54aaf2 100644
+--- a/skills/inspire-code/profiles/README.md
++++ b/skills/inspire-code/profiles/README.md
+@@ -49,6 +49,14 @@ and the authoring rules in `tdd`.
+ Extra dimensions `review` adds to its fan-out for this stack (e.g. api-contract,
+ styling, a11y, security). Each is a lens name + one line of what it hunts for.
+ 
++## Quality gates
++The concrete tools and rules that mechanically enforce this stack's share of
++[`_references/quality-gates.md`](../../_references/quality-gates.md): which lint
++rules, which coverage tooling, which of them are absolute vs ratcheted, and which
++suppression syntax counts as this stack's escape hatch. A rule that does not hold for
++this stack is listed as **dropped with its reason**, never left out silently. Names
++tools and rules only — never an org's server or pipeline.
++
+ ## Build & verify
+ The concrete lint / type-check / build / test commands. `fix-build`, `review`, and
+ `debug` use these instead of guessing.
+@@ -65,6 +73,7 @@ Pointers to deeper files under `profiles/{id}/references/`, read only when neede
+ | `## Test conventions` | `tdd` · `review` Phase 4 |
+ | `## Forbidden patterns` | `review` · `tdd` authoring rules |
+ | `## Review focus` | `review` fan-out (extra dimensions) |
++| `## Quality gates` | `/inspire_bootstrap stack` (installs them) · `review` (missing-gate findings) |
+ | `## Build & verify` | `fix-build` · `review` build step · `debug` |
+ 
+ ## Authoring rules for profiles
