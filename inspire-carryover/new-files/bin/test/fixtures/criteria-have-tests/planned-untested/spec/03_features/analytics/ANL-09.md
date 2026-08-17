@@ -1,9 +1,0 @@
-# ANL-09: Example
-
-**Priority:** Core
-**State:** 🟡 Planned
-
-## Acceptance criteria
-
-- [ ] (ANL-09-1) The system returns the matching records as a paginated page.
-- [ ] (ANL-09-2) The page size is capped, and the cap is observable.

@@ -56,10 +56,6 @@ you build on top of it.
   each folder carries a README explaining its purpose and layout.
   `98_skill_learnings/` is a **closed archive** — the pre-0.6 long-form learnings, kept
   for the upstream conversation; see its README.
-- `inspire-carryover/` — the record of **this fork's runtime delta** against the 0.1.0
-  base: the five local themes as verbatim files plus one patch per modified file. It is
-  the material for the upstream PR, and the reason the upgrade could take the 0.6.0 base
-  everywhere without losing anything.
 - `.manual/` — the INSPIRE **microsite / manual** (open `.manual/index.html`).
 
 The two product-side dirs below are the product, not INSPIRE:
@@ -134,7 +130,11 @@ registered in any config unless `--declare-marketplace` is passed.
 
 **Before upgrading, extract this fork's runtime delta first** — a layout hop retires the
 tree the edits live in, and the per-file diff against the old base is only cheap
-beforehand. `inspire-carryover/` is what that produced last time.
+beforehand. The 0.1.0 → 0.6.0 extraction is commit `013b4ca` (`inspire-carryover/`, added
+there and removed in `HEAD` once the port was done): 45 added files verbatim plus one
+patch per modified file. Recover it with `git show 013b4ca --stat` if you want the shape;
+it is spent as a re-application tool, since its patches target a base the tree no longer
+has.
 
 ### Contributing upstream
 

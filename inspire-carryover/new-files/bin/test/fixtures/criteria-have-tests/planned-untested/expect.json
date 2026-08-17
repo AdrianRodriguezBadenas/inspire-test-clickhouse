@@ -1,1 +1,0 @@
-{ "exit": 0, "findings": [ { "rule": "criteria-have-tests", "message_substring": "is claimed by no test" } ] }
