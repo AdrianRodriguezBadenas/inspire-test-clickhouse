@@ -13,6 +13,33 @@
 > The one-line lessons distilled from them live in `../98_lessons/` and carry
 > `related_to` back to the learning each came from.
 
+### Corrections found by running the upgrade
+
+`20260817_extract-fork-runtime-before-a-hop` was written from **reading** the 0.6.0
+upgrade machinery, before running it. The run disproved two of its three findings. The
+learning is write-once and stays as written; the record is corrected here, and anything
+carried upstream should carry these corrections with it.
+
+- **"A hop leaves an unrecognized file behind silently."** Wrong. Both `--mode plan` and
+  `--mode update` name every fork-added path individually — `yours — INSPIRE never
+  shipped this` — and the report groups them under RUNTIME rather than burying them in a
+  count. What survives of the finding is narrower: the hop does not *relocate* them, so
+  they stay in the root everything else vacated. Even that cost nothing here, because
+  `.inspire/bin/` was the pre-0.3 staging source and already held all three validators at
+  the 0.3+ destination.
+- **"A fork's golden fixtures have nowhere to live."** Half wrong. True of a *fresh*
+  0.6.0 install, which never materializes `bin/test/`. Not true of this upgrade: the hop
+  left the pre-0.3 staged tree in place, `run-tests.sh` came with it, and the 56-case
+  suite ran from `.inspire/bin/test/` unchanged.
+- **"Fork-authored intra-runtime paths go stale."** Confirmed, and it was the real cost:
+  the hook blocks this fork had added still pointed at `.claude/bin/` and `.inspire_kb/`,
+  and the shared `_lib.sh` helpers were reverted with the base — which the validator suite
+  caught as 9 failures with one root cause.
+- **New, not in the learning:** upstream's own `inspire-bootstrap/SKILL.md` carries 8
+  relative links one level too shallow (`../../inspire_kb/…` where every other 0.6.0
+  skill correctly uses `../../../`). Left unfixed here on purpose, to avoid drift at the
+  next upgrade; it belongs in the upstream PR.
+
 The **self-learning layer** — durable, version-stamped insights about the
 `inspire-*` **skills themselves**, captured in a fork and bound *upstream* to
 INSPIRE core. Where the rest of the knowledge base describes the **product**, this
