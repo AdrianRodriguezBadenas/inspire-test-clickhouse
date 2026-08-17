@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# .claude/bin/test/run-tests.sh — run quality_lib rules against fixtures
+# .inspire/bin/test/run-tests.sh — run quality_lib rules against fixtures
 #
 # Usage:
-#   .claude/bin/test/run-tests.sh                # run all tests
-#   .claude/bin/test/run-tests.sh <rule-name>    # run tests for one rule
+#   .inspire/bin/test/run-tests.sh                # run all tests
+#   .inspire/bin/test/run-tests.sh <rule-name>    # run tests for one rule
 #
-# Each fixture lives at .claude/bin/test/fixtures/{rule}/{scenario}/
+# Each fixture lives at .inspire/bin/test/fixtures/{rule}/{scenario}/
 # and contains:
 #   - spec/sdd/...  the test SDD tree to scan
 #   - expect.json   { "exit": N, "findings": [{rule, target_glob, message_substring}, ...] }
