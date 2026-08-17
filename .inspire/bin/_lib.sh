@@ -17,6 +17,9 @@ SDD_SPEC_ROOT="${SDD_SPEC_ROOT:-inspire_kb/04_domain}"
 # the matching features root for free. Override explicitly when they are not siblings.
 SDD_FEATURES_ROOT="${SDD_FEATURES_ROOT:-$(dirname "$SDD_SPEC_ROOT")/03_features}"
 
+# Same derivation, same reason: the decision layer is a sibling of the spec layer.
+SDD_ADR_ROOT="${SDD_ADR_ROOT:-$(dirname "$SDD_SPEC_ROOT")/01_adr}"
+
 # Where the product's tests live, and what a test file is called. Shared by every rule
 # that checks a KB claim against the tests, so the two cannot drift apart.
 #

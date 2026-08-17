@@ -73,6 +73,24 @@ for fixture in "$FIXTURES_DIR"/*/*/; do
     fi
   done < <(jq -c '.findings[]?' "$expect_file")
 
+  # Optional `finding_count`: assert HOW MANY findings the rule emitted, not just that
+  # the expected ones are among them.
+  #
+  # Added because a substring assertion cannot catch a rule that reports the same defect
+  # twice — found by a mutation drill, where breaking a de-duplication survived every
+  # fixture. Deduplication, "report once per file", and "suppress the per-item findings"
+  # are all behaviours whose only observable difference is a count, so a suite that cannot
+  # express one cannot defend them. Absent from expect.json = not checked, so every
+  # existing fixture is unaffected.
+  expected_count="$(jq -r '.finding_count // empty' "$expect_file")"
+  if [ -n "$expected_count" ]; then
+    actual_count="$(grep -c '"rule":' "$actual_stderr" 2>/dev/null || echo 0)"
+    if [ "$actual_count" != "$expected_count" ]; then
+      pass=false
+      echo "FAIL $rule/$scenario (finding count: expected $expected_count, got $actual_count)" >&2
+    fi
+  fi
+
   if $pass; then
     echo "PASS $rule/$scenario"
   else
