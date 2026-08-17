@@ -1,4 +1,17 @@
-# 98 · Skill learnings
+# 98 · Skill learnings — closed archive
+
+> **This layer is closed as of the 0.6.0 upgrade (2026-08-17). Write nothing new here.**
+>
+> INSPIRE 0.6.0 retired `inspire-learn` in favour of `inspire-lesson`, and the new home
+> is [`../98_lessons/`](../98_lessons/). It is **not a rename**: a *lesson* is a single
+> imperative line that gets materialized into the skill, while a *learning* below is
+> long-form reasoning aimed at the INSPIRE core team. The two files kept here are
+> preserved verbatim, with their original `0.1.0` version stamp, because that reasoning
+> is the material an upstream contribution is built from — and write-once means they are
+> never rewritten to fit a newer schema.
+>
+> The one-line lessons distilled from them live in `../98_lessons/` and carry
+> `related_to` back to the learning each came from.
 
 The **self-learning layer** — durable, version-stamped insights about the
 `inspire-*` **skills themselves**, captured in a fork and bound *upstream* to
