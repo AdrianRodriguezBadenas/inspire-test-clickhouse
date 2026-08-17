@@ -66,16 +66,35 @@ anything reaches the operator):
   Cyclomatic complexity counts branches, and a dispatch table is all branches and no
   complexity; splitting one to satisfy the rule makes the code worse. Adopt a *cognitive*
   complexity rule instead if the need is real.
-- `eslint-plugin-import`: `import/no-cycle`, plus `import/no-restricted-paths` to make
+- `eslint-plugin-import-x` (**not** `eslint-plugin-import`, which declares peer support
+  only through eslint 9): `import-x/no-cycle`, plus `import-x/no-restricted-paths` to make
   the four-layer boundary above a build error instead of a review comment
-  (controllers → application → infrastructure; `domain/` imports nothing).
+  (controllers → application → infrastructure → domain; `domain/` imports nothing).
+  Two things this rule needs, both of which produce a **silently passing** rule when
+  missing, and both measured rather than assumed:
+  - **A TypeScript resolver** (`eslint-import-resolver-typescript`, wired through
+    `settings['import-x/resolver-next']`). Without one, not a single relative `.ts` import
+    resolves and every zone check is skipped — the rule reports nothing, for ever.
+  - **Zones derived from the modules on disk**, not globbed and not written per module.
+    `target: './src/*/domain'` matches nothing; hard-coding one module's paths works until
+    the second module is added and escapes the boundary unnoticed. Generate them from the
+    layer ordering and `readdirSync('./src')`, and throw if the derivation yields none —
+    a boundary rule with zero zones passes on everything.
 - `eslint-plugin-jest`: `expect-expect` (a test that asserts nothing — the
   characteristic failure of generated tests) · `no-disabled-tests` ·
   `no-focused-tests` · `no-conditional-expect`.
 
 **Ratcheted** (aggregates; baseline kept outside the repo per Rule 3):
-- **coverage** — `npm run test -- --coverage`; jest's `coverageThreshold` is the
-  in-repo floor, the history lives in the metrics service.
+- **coverage** — `npm run test -- --coverage`; jest's `coverageThreshold` is the in-repo
+  floor, the history lives in the metrics service. Set the floor to **what is measured
+  today**, per metric, and raise it as work lands: the absolute value carries no claim,
+  the direction does.
+  Read the number honestly, because two things distort it. `collectCoverageFrom` counts
+  declaration-heavy files (a DTO with 288 field decorators, generated GraphQL types), which
+  drags statements down without any behaviour going unchecked; and the **e2e suite runs
+  under its own jest config, so it contributes nothing to this number** — which is where
+  most acceptance criteria are actually covered. A low statements floor beside a high
+  branch floor is the expected shape, not a defect to explain away.
 
 **Dropped, with the reason** (Rule 2's third branch — a rule that does not hold here
 is written down, never silently missing):
@@ -98,6 +117,11 @@ is written down, never silently missing):
 - `@eslint-community/eslint-plugin-eslint-comments`: `require-description` ·
   `no-unlimited-disable` · `no-unused-disable` — a suppression must name its rule and
   say why, and a stale one is an error rather than a fossil.
+  **Its `recommended` preset is not enough**, measured: that preset enables five rules
+  (`disable-enable-pair`, `no-aggregating-enable`, `no-duplicate-disable`,
+  `no-unlimited-disable`, `no-unused-enable`) and **neither `require-description` nor
+  `no-unused-disable` is among them**. Enabling the preset alone leaves the promise above
+  unenforced while looking installed — turn both on explicitly.
 - The repo-wide count of suppressions plus `as any` / `as unknown as` / `x!` is
   **ratcheted in-repo** — the one baseline Rule 3 allows inside the repository, because a
   suppression is source text and the ceiling bump shows up in the same diff. Patterns and

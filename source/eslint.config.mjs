@@ -1,10 +1,110 @@
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
+import importX from 'eslint-plugin-import-x';
+import jest from 'eslint-plugin-jest';
+import comments from '@eslint-community/eslint-plugin-eslint-comments/configs';
+import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescript';
+import { readdirSync, existsSync } from 'node:fs';
+
+// `eslint-plugin-import-x`, not `eslint-plugin-import`: the latter declares peer support
+// only through eslint 9 and this project is on 10, so installing it would have needed
+// --legacy-peer-deps — silencing a real incompatibility to satisfy a rule about not
+// silencing things. import-x is the maintained fork, same rules under the `import-x/`
+// prefix. The nestjs profile is updated to name it.
+
+// The layers, innermost first. A layer may import anything to its right (inward) and
+// nothing to its left (outward) — that single ordering generates every zone below, so the
+// boundary is stated once instead of once per pair.
+const LAYERS = ['controllers', 'application', 'infrastructure', 'domain'];
+
+const WHY = {
+  'domain<-application':
+    'domain/ is pure types and rules — it may not import the application layer. Invert the dependency: pass what it needs in.',
+  'domain<-infrastructure':
+    'domain/ may not import infrastructure. Persistence is an outward detail; the domain defines the shape, infrastructure maps to it.',
+  'domain<-controllers': 'domain/ may not import controllers. Nothing inward depends on a transport.',
+  'infrastructure<-application':
+    'infrastructure/ may not import the application layer — a repository does not call a service.',
+  'infrastructure<-controllers': 'infrastructure/ may not import controllers.',
+  'application<-controllers':
+    'application/ may not import controllers — a service that knows its transport cannot be reused by another.',
+  'controllers<-infrastructure':
+    'controllers/ may not reach infrastructure directly — go through the application layer, which is where the business logic lives.',
+};
+
+const MODULES = readdirSync('./src', { withFileTypes: true })
+  .filter((d) => d.isDirectory() && LAYERS.some((l) => existsSync(`./src/${d.name}/${l}`)))
+  .map((d) => d.name);
+
+const LAYER_ZONES = MODULES.flatMap((m) =>
+  Object.entries(WHY).flatMap(([pair, message]) => {
+    const [target, from] = pair.split('<-');
+    return existsSync(`./src/${m}/${target}`) && existsSync(`./src/${m}/${from}`)
+      ? [{ target: `./src/${m}/${target}`, from: `./src/${m}/${from}`, message }]
+      : [];
+  }),
+);
+
+if (LAYER_ZONES.length === 0) {
+  // A boundary rule with no zones is a rule that passes on everything. If the layout ever
+  // stops matching LAYERS, fail loudly here rather than lint clean and prove nothing.
+  throw new Error(
+    'eslint.config.mjs: no layer zones derived from ./src — the layering rule would enforce nothing. Check LAYERS against the directory names.',
+  );
+}
 
 export default tseslint.config(
   { ignores: ['dist/**', 'coverage/**'] },
   eslint.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
+  comments.recommended,
+  {
+    rules: {
+      // NOT in the plugin's `recommended` set — that enables five rules and none of them
+      // is this one, so relying on the preset would have left the profile's promise
+      // unenforced. A suppression must name its rule and say why...
+      '@eslint-community/eslint-comments/require-description': [
+        'error',
+        { ignore: [] },
+      ],
+      // ...and a suppression that no longer suppresses anything is a fossil, not history.
+      '@eslint-community/eslint-comments/no-unused-disable': 'error',
+    },
+  },
+  {
+    plugins: { 'import-x': importX },
+    // Without a TypeScript resolver, import-x cannot resolve a single relative `.ts`
+    // import — measured: 77 of them — and both rules below skip what they cannot resolve.
+    // They then pass on everything, for ever, while appearing to be enforced. Found by
+    // deliberately violating the boundary and watching nothing happen; `no-unresolved`
+    // turned on temporarily is what named the cause.
+    settings: {
+      'import-x/resolver-next': [createTypeScriptImportResolver({ project: './tsconfig.json' })],
+    },
+    rules: {
+      // A cycle is the failure mode that makes a layer boundary meaningless: two modules
+      // that import each other are one module with extra steps.
+      'import-x/no-cycle': ['error', { maxDepth: Infinity }],
+
+      // The four-layer boundary from the profile's `## Layering`, as a build error rather
+      // than a review comment. Direction: controllers → application → infrastructure,
+      // and `domain/` imports nothing from the layers above it.
+      //
+      // Targets are globbed per module (`src/*/domain`, not `src/analytics/domain`) so a
+      // second module inherits the boundary instead of quietly escaping it.
+      // The four-layer boundary from the profile's `## Layering`, as a build error rather
+      // than a review comment. Allowed direction: controllers -> application ->
+      // infrastructure -> domain; `domain/` imports nothing from the layers above it.
+      //
+      // Zones are DERIVED from the modules on disk, not written per module and not
+      // globbed. Measured: `target: './src/*/domain'` matches nothing in import-x 4.17 —
+      // the rule stays silent and the boundary is decoration. Hard-coding
+      // `./src/analytics/...` works but lets the second module escape the boundary the
+      // day it is added, unnoticed, which is the same failure one level along. Reading
+      // the directory means a new module inherits the rule by existing.
+      'import-x/no-restricted-paths': ['error', { zones: LAYER_ZONES }],
+    },
+  },
   {
     languageOptions: {
       parserOptions: {
@@ -48,7 +148,24 @@ export default tseslint.config(
     // profile: untyped boundaries (debt — shrinks as the boundary gets modelled) and
     // negative-path construction (structural — the test cannot exist otherwise).
     files: ['**/*.spec.ts', '**/*.e2e-spec.ts', 'test/**/*.ts'],
+    plugins: { jest },
     rules: {
+      // The characteristic failure of a generated test: it runs the new code and asserts
+      // nothing, so it passes CI while proving nothing. This is the mechanical half of
+      // what the mutation drill checks by hand — a test that claims an acceptance
+      // criterion with `@covers` and asserts nothing would otherwise satisfy
+      // criteria-have-tests.sh while pinning no behaviour at all.
+      'jest/expect-expect': 'error',
+
+      // A skipped or focused test is a silent hole: the first stops running, the second
+      // stops everything else from running. Both pass.
+      'jest/no-disabled-tests': 'error',
+      'jest/no-focused-tests': 'error',
+
+      // An assertion inside an `if` may simply not execute, which is a green test that
+      // asserted nothing on the path that mattered.
+      'jest/no-conditional-expect': 'error',
+
       // Untyped boundaries: an HTTP response body and a GraphQL payload are `any`, and
       // inspecting them is the whole point of an e2e. Fully in force for `src/**`.
       '@typescript-eslint/no-unsafe-assignment': 'off',
