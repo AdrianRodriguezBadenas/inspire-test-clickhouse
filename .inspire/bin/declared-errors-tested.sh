@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# .claude/bin/declared-errors-tested.sh
+# .inspire/bin/declared-errors-tested.sh
 #
 # Rule: every error an action descriptor declares in `## Errors` is exercised by a
 # test. A declared error with no test is a contract nobody checks — the spec promises
@@ -24,8 +24,8 @@
 # two gates cannot drift apart on what counts as a test file.
 #
 # Usage:
-#   .claude/bin/declared-errors-tested.sh                    # whole tree
-#   .claude/bin/declared-errors-tested.sh .inspire_kb/04_domain/analytics
+#   .inspire/bin/declared-errors-tested.sh                    # whole tree
+#   .inspire/bin/declared-errors-tested.sh inspire_kb/04_domain/analytics
 
 set -uo pipefail
 

@@ -19,7 +19,7 @@ only in the open.
 ## Resolution
 
 Same mechanism as the stack profiles ([`inspire-code/profiles/README.md`](../../inspire-code/profiles/README.md)),
-resolved from [`00_bootstrap/stack.md`](../../../../.inspire_kb/00_bootstrap/stack.md):
+resolved from [`00_bootstrap/stack.md`](../../../../inspire_kb/00_bootstrap/stack.md):
 
 1. **Deterministic** — if `stack.md`'s frontmatter declares
    `surface_conventions: [<id>, …]`, use that set. `/inspire_bootstrap stack`

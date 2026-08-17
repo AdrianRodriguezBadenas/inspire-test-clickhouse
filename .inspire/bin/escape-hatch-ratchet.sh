@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# .claude/bin/escape-hatch-ratchet.sh
+# .inspire/bin/escape-hatch-ratchet.sh
 #
 # Rule: the number of escape hatches in the product code may fall, never rise.
 # An escape hatch is a deliberate suppression of a mechanical rule — a
@@ -42,9 +42,9 @@
 # Severity: error when a count exceeds its ceiling.
 #
 # Usage:
-#   .claude/bin/escape-hatch-ratchet.sh             # check
-#   .claude/bin/escape-hatch-ratchet.sh --update    # lower ceilings that dropped
-#   ESCAPE_HATCH_CONFIG=path .claude/bin/escape-hatch-ratchet.sh
+#   .inspire/bin/escape-hatch-ratchet.sh             # check
+#   .inspire/bin/escape-hatch-ratchet.sh --update    # lower ceilings that dropped
+#   ESCAPE_HATCH_CONFIG=path .inspire/bin/escape-hatch-ratchet.sh
 
 set -uo pipefail
 

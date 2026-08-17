@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# .claude/bin/criteria-have-tests.sh
+# .inspire/bin/criteria-have-tests.sh
 #
 # Rule: every acceptance criterion of a feature is traceable to a test.
 #
@@ -53,8 +53,8 @@
 # Config (env, all optional): SDD_FEATURES_ROOT · SDD_TEST_SCOPE · SDD_TEST_GLOBS.
 #
 # Usage:
-#   .claude/bin/criteria-have-tests.sh                       # every feature
-#   .claude/bin/criteria-have-tests.sh .inspire_kb/03_features/analytics
+#   .inspire/bin/criteria-have-tests.sh                       # every feature
+#   .inspire/bin/criteria-have-tests.sh inspire_kb/03_features/analytics
 
 set -uo pipefail
 
