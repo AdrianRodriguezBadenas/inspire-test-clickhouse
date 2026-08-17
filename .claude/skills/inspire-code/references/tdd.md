@@ -15,18 +15,189 @@ before writing code.
 > `## Forbidden patterns` refine the generic rules below, and its `## Build &
 > verify` gives the exact commands to run. No profile → the generic rules stand.
 
+## Precondition: the test infrastructure runs, or the cycle cannot start
+
+E2E tests are the first thing written, and they need something real to run against —
+the database, the broker, the cache. **No infrastructure, no red; no red, no TDD.** So
+this is a gate before step 1, not a chore discovered at step 2:
+
+1. **Read what the tests need** from `00_bootstrap/stack.md` (`## Data`, messaging, and
+   the local-dev-database choice). That is the declared inventory; the compose file is
+   its realization, not its source of truth.
+2. **Compare it against the compose file** in the product repo. Every declared component
+   the e2e suite touches has a service. A component in `stack.md` and not in compose is
+   the defect — a suite that cannot run, discovered halfway through writing it.
+3. **A new component is a KB edit first.** Needing Redis, a second database or a broker
+   is not a compose edit: it is a stack change. Record it in `stack.md` (and an ADR when
+   it is load-bearing — `stack.md` is explicit that replacing a load-bearing choice is an
+   ADR), *then* add the service. Compose follows the decision; it never stands in for it.
+4. **Ask the operator to bring it up. Never assume it is running, never start it
+   silently.** Long-running infrastructure is theirs to own: they may have it up already,
+   on other ports, or against a shared instance. Print the exact command and wait.
+5. **Verify, then start.** Run the e2e suite once before writing anything. It must fail
+   for the *right* reason — an assertion, not a connection refused. A connection error is
+   not red; it is a suite that never ran, and treating it as red is how an
+   implementation gets written against tests nobody has seen fail.
+
+The concrete commands and service names belong to the stack profile's
+`## Build & verify`; this precondition is the stack-agnostic part.
+
 ## Workflow
 
 1. **Clarify** — read the feature file and any action descriptor
    (`04_domain/{module}/{entity}/`) that specifies the behavior. Extract inputs,
    outputs, and edge cases from the acceptance criteria and the descriptor's
    contract. Do not invent behavior the KB doesn't state.
-2. **Write failing tests** — one per acceptance criterion, using the project's test
-   framework. Run them; confirm they fail for the right reason (red).
+2. **Derive the test list, then write it as e2e** — the list is not invented, it is
+   composed (see *The test list is derived* below). Write them at the **e2e level
+   first**: the acceptance criteria describe what a caller observes, so that is the
+   level they translate to — one request in, one response out, real database, external
+   systems mocked. Run them; confirm they fail for the right reason (red). Unit tests
+   come later, from the internal decomposition step 3 produces — they cannot be written
+   before the units exist.
 3. **Implement the minimum** — the simplest code that passes. No speculative
    generality.
 4. **Verify** — run the tests (and the build) using the project's commands (green).
 5. **Refactor** — with the tests as a safety net. Clean up; re-run.
+6. **Mutation drill** — with code and tests settled, check that the tests were
+   *complete*: break the code on purpose and confirm they notice (see below). A
+   survivor sends you back to step 2, never to step 3.
+
+Steps 1–5 prove the code does what the criteria say. Step 6 proves the **tests would
+have caught it if it didn't** — the one thing a green suite cannot tell you about
+itself.
+
+## The test list is derived, not invented
+
+Before writing a line, compose the list from three sources. Two of them are already
+written down; the third is what stops the list depending on whoever authored the
+feature file remembering the boring cases.
+
+1. **The acceptance criteria** — `03_features/{module}/{feature-id}.md`. One testable
+   criterion → at least one test, and the test **claims** it with `/** @covers {id} */`
+   above it. The id stays out of the test name: names are read on every CI failure, so
+   they hold a sentence about behavior (ideally the criterion's own words) while the
+   annotation carries the traceability. Enforced by
+   `.inspire/bin/criteria-have-tests.sh` — warning while the feature is 🟡 Planned,
+   blocking from 🔵 In progress on, because that is when work has started and the first
+   act of TDD is the test. A criterion you cannot write a test for is a spec problem;
+   hand it back before writing code.
+2. **Every error the descriptor declares** — each bullet in the action descriptor's
+   `## Errors` is a test. A declared error with no test is a contract nobody checks, and
+   this one is **enforced**: `.inspire/bin/declared-errors-tested.sh` requires the error
+   code to appear as a literal in a test file — warning while the action is `draft`,
+   blocking from `accepted` on. Asserting the exact code is what the surface convention
+   asks for anyway, so satisfying the gate and satisfying the convention are one act.
+3. **The resolved surface convention's always-present cases** —
+   [`../../_references/conventions/README.md`](../../_references/conventions/README.md),
+   resolved from `00_bootstrap/stack.md`'s `surface_conventions:`. Unknown id on a
+   fetch, absent credential, valid credential without the permission, empty list,
+   no stacktrace in an error body. These hold whether or not a criterion mentions them.
+4. **The invariants of any ADR the feature realizes** — a read-only transport exposing no
+   write, an append-only store never updating in place. These are architectural
+   guarantees, so they belong to the ADR and not to any one use case; a feature file that
+   restated them would drift from the ADR the moment it changed.
+
+**Only source 1 needs a criterion.** Sources 2–4 produce tests that no acceptance
+criterion mentions, and that is correct rather than a gap: writing a criterion for "an
+unknown id returns not-found" pushes a programming convention into the feature file, which
+is the duplication the convention layer exists to remove. `criteria-have-tests.sh` is
+one-directional for this reason — it asks whether each criterion is tested, never whether
+each test is specified. Beyond these four sources, ordinary engineering tests (unit tests
+of the decomposition, a regression test for a fixed bug, a security probe) need no
+justification from the KB at all.
+
+The convention also supplies **what each case asserts**: the descriptor declares the
+logical error (`missing_required_field`), the convention says what a caller observes
+(which status, which code, which envelope). Neither alone is enough to write the test,
+and inventing the missing half is what makes two engineers write two different contracts
+for the same spec. **No convention resolved → say so and stop**; do not guess a status
+code and then pin the guess with a test.
+
+Where the descriptor carries a `**Surface deviation:**` note, that note wins over the
+convention. Where it does not, the convention holds — that is what makes it restrictive.
+
+## The test boundary
+
+**A test starts when the entry point is invoked and ends with the response.** That
+single sentence decides most mocking arguments before they start.
+
+Inside the boundary — asserted, in full:
+
+- The **response**, whole. Not a field or two out of the envelope.
+- What was **persisted**: the full stored record, built from the domain entity, not from
+  the value under test.
+- What was **sent outward**: the third-party request that was made — its URL, method and
+  body — not merely that a mock existed.
+- What was **published**: the full payload of each emitted event or message, and its
+  topic/key. An event is an output of the action; an unasserted publish is an untested
+  output.
+
+Outside the boundary — mocked, and deliberately not followed:
+
+- Third-party APIs. We do not own them; their behavior is a fixture, and the interesting
+  assertion is what *we* sent.
+- Event consumers. The action's job ended when the event was published. Whether a
+  downstream consumer handled it is that consumer's own test, at its own boundary.
+- Anything asynchronous that continues after the response is returned — chase it and the
+  test becomes a slow, flaky integration test of the whole system, failing for reasons
+  that have nothing to do with the action under test.
+
+The rule cuts both ways: **stopping short is as wrong as going too far.** An action that
+saves a row, calls a payment provider and emits an event has three outputs plus its
+response. A test asserting only the response passes while two of the four are broken.
+
+## The mutation drill (step 6)
+
+A green suite proves the tests *ran*. It cannot prove they would have **failed** had
+the code been wrong — and that is the characteristic defect of generated tests: they
+execute the line and assert nothing that pins its behavior down. The drill closes that
+hole with the agent as the mutation engine, scoped to the change. It is a **check, not
+a metric**: no score, no baseline, no ratchet ([`../../_references/quality-gates.md`](../../_references/quality-gates.md)).
+
+**Preconditions.** The suite is green and the working tree is clean of unrelated
+edits. Never drill on a red suite — a survivor means nothing when tests already fail.
+
+**Scope.** Only the files this change touched, and within them the lines that carry
+the acceptance criteria's behavior. Budget **k = 5–10 mutations per diff**, spent on
+the layers where a silent wrong answer is worst: business logic and domain rules
+first, wiring and DTOs last. This bound is the whole reason no tool is needed — the
+performance engineering that a general mutation-testing tool exists to solve does not
+apply to ten mutants.
+
+**Catalogue** — targeted, judgment-chosen, never random. Judgment is what makes ten
+mutants worth more than a thousand:
+
+| Mutation | What a survivor tells you |
+|---|---|
+| Boundary: `>` ↔ `>=`, `<` ↔ `<=` | No test sits *on* the limit |
+| Condition: invert a predicate, `&&` ↔ `\|\|` | A branch is entered but never asserted |
+| Return the empty/default value (`[]`, `null`, `0`, the unmapped input) | The assertion accepts any shape |
+| Delete an `await` | Nothing observes the ordering or the rejection |
+| Delete a side-effecting call (a save, an emit, a log-and-continue) | A collaborator call is unverified |
+| Swap two same-typed arguments | The mapping is asserted against itself |
+| Error branch → success branch (drop a `throw`) | The declared error set is untested |
+
+**Procedure.** One mutation at a time: apply it, run only the tests that cover the
+file (the profile's `## Build & verify` commands, narrowed), record **killed** (a test
+failed) or **survived** (all green), then **revert before the next one**. Never hold
+two mutations at once, never leave one in the tree, and never commit with one applied
+— finish by confirming `git diff` matches the pre-drill state exactly. Discard rather
+than count: a mutation that fails to compile, and one that is semantically identical
+to the original (it proves nothing either way). A mutated loop condition can hang —
+run with a timeout and treat a timeout as killed.
+
+**Reading the result.** Every survivor is a **test gap, not a code bug**: the code was
+right before you broke it. Go back to step 2 and write the test that kills it, then
+re-run the drill. Report survivors as `file:line — mutation applied → the test that
+was missing`; a diff whose drill found nothing says the tests are load-bearing, which
+is the only claim worth making at the end of a TDD cycle.
+
+**What complements it, cheaply.** For pure functions with invariants — `domain/`
+logic, parsers, mappers — property-based testing (`fast-check` or the stack's
+equivalent) covers the orthogonal axis: the drill varies the *code* to test the tests,
+properties vary the *inputs* to test the code. Neither substitutes for the other, and
+random inputs behind a weak assertion still prove nothing.
 
 ## Test structure: GIVEN / WHEN / THEN
 
@@ -52,6 +223,15 @@ it('describes one behavior', () => {
   persisted document, assert the whole object; build the expected value from the
   domain entity, never from the value under test (comparing a result against itself
   proves nothing).
+- **For a collection or paginated response, "the whole object" is the envelope plus the
+  identity and order of the members** — not every field of every member. Asserting 200
+  records × 40 fields is unmaintainable and breaks on every unrelated field addition, so
+  it degrades into `toHaveLength`, which is the real failure. Assert instead: the
+  envelope's **exact key set** (no extra, no missing), the members' **natural keys in
+  order**, and the paging fields. A count alone cannot tell a correct page from an
+  off-by-one that returned the same number of wrong rows — and that mutation is the one
+  a paging bug actually is. Each member's field shape is the subject of the
+  single-record tests; re-asserting it per member buys nothing.
 - **Prefer exact values over weak matchers.** Reach for "any"/"contains"/regex
   matchers only for values that are genuinely non-deterministic (generated ids,
   timestamps) — each weakening hides drift.
@@ -91,7 +271,13 @@ real type error, non-null assertions (`x!`) that disable null-checking at the ca
 site, and formatter-ignore pragmas. If the type-checker or linter reports a
 problem, treat it as a real defect: change the code, the type, or the design.
 Narrow with a guard / `??` / a type guard instead of asserting. The only acceptable
-use is a documented, reviewed, time-boxed escape hatch — never silent.
+use is a documented, reviewed, time-boxed escape hatch — never silent. Concretely:
+`@ts-expect-error` rather than `@ts-ignore` (it fails once the real error is fixed, so
+it expires on its own), the rule named in the disable comment, a written reason beside
+it, and a tracker id when the reason is "later". Those conditions are enforced, not
+trusted — see [`../../_references/quality-gates.md`](../../_references/quality-gates.md)
+Rule 4 (the linter refuses an undescribed suppression; the repo-wide count is
+ratcheted and may only fall).
 
 ```ts
 // Wrong — silences the symptom
