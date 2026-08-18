@@ -84,7 +84,12 @@ for fixture in "$FIXTURES_DIR"/*/*/; do
   # existing fixture is unaffected.
   expected_count="$(jq -r '.finding_count // empty' "$expect_file")"
   if [ -n "$expected_count" ]; then
-    actual_count="$(grep -c '"rule":' "$actual_stderr" 2>/dev/null || echo 0)"
+    # `grep -c` exits 1 when the count is zero, so `|| echo 0` appended a SECOND zero and
+    # produced "0\n0" — which never equals "0", so `finding_count: 0` could not pass. Count
+    # with a filter that always succeeds instead. Found by the first fixture that asserted
+    # zero findings, which is the case the original form could not express.
+    actual_count="$(grep -c '"rule":' "$actual_stderr" 2>/dev/null | head -1)"
+    [ -n "$actual_count" ] || actual_count=0
     if [ "$actual_count" != "$expected_count" ]; then
       pass=false
       echo "FAIL $rule/$scenario (finding count: expected $expected_count, got $actual_count)" >&2
