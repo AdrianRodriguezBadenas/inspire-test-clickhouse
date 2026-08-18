@@ -63,13 +63,20 @@ Test-file discovery for both is in `_lib.sh` (`sdd_find_test_files`, `sdd_litera
 the two gates must agree on what a test file *is*, and the glob set already had one
 silent-miss bug in it.
 
-These three are **tools with a verdict**, in the sense `trust.sh` below is a tool without
+These three source-code gates are **tools with a verdict**, in the sense `trust.sh` below is a tool without
 one: they emit findings and can block, but they sit outside `review.sh`'s default rules
 because everything else here validates the knowledge base and these validate the code the
 knowledge base produced. They are stack-agnostic — every pattern and every ceiling comes
 from the project's config, so the runtime never hardcodes one language's suppression
 syntax. Rationale and the ceiling-in-repo exception:
 `.claude/skills/_references/quality-gates.md` Rule 4.
+
+### Gates over the KB's own claims
+
+| Script | Checks | Notes |
+|---|---|---|
+| `adr-maturity-matches-features.sh` | Every ADR a 🟢 Implemented feature links to is itself at `implemented`. | The decision layer was the only KB layer no rule read. One-directional, like `touched-entity-lifecycle.sh`: it walks features and never walks ADRs demanding features. Only 🟢 features are checked — at 🟡/🔵 a `design`-stage ADR is the ladder working. Findings are grouped per ADR, since the fix is a single `promote` however many features cite it. Takes the **features** root, so it is absent from `review.sh`'s default list, which passes the spec root. |
+| `profile-gates-installed.sh` | Every quality gate a resolved stack profile **declares** in its `gates:` frontmatter is present in the project's config (or absent, where the profile rejects it). | The gate that guards the gates. Reads the frontmatter, never the `## Quality gates` prose: that prose deliberately names rules the stack **rejects**, so scraping it would demand what the reasoning refuses. Cannot see a rule that is present but switched `off` — stated in its header rather than implied. Wired into `pre-pr.sh`. |
 
 ### Library
 

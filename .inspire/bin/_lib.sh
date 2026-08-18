@@ -20,6 +20,15 @@ SDD_FEATURES_ROOT="${SDD_FEATURES_ROOT:-$(dirname "$SDD_SPEC_ROOT")/03_features}
 # Same derivation, same reason: the decision layer is a sibling of the spec layer.
 SDD_ADR_ROOT="${SDD_ADR_ROOT:-$(dirname "$SDD_SPEC_ROOT")/01_adr}"
 
+# ...and the foundation layer, where the stack declares which profiles are resolved.
+SDD_BOOTSTRAP_ROOT="${SDD_BOOTSTRAP_ROOT:-$(dirname "$SDD_SPEC_ROOT")/00_bootstrap}"
+
+# Where the product's code lives, and where the stack profiles do. The profiles are part
+# of the runtime rather than the KB, so this one is NOT derived from the spec root — a
+# fixture redirecting SDD_SPEC_ROOT must still be able to point at its own profile tree.
+SDD_SOURCE_ROOT="${SDD_SOURCE_ROOT:-source}"
+SDD_PROFILES_ROOT="${SDD_PROFILES_ROOT:-.claude/skills/inspire-code/profiles}"
+
 # Where the product's tests live, and what a test file is called. Shared by every rule
 # that checks a KB claim against the tests, so the two cannot drift apart.
 #

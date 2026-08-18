@@ -1,7 +1,7 @@
 ---
 kind: bootstrap-stack
 status: configured          # configured via /inspire_bootstrap init
-profiles: [nestjs]          # inspire-code stack profiles to load (see .inspire/skills/inspire-code/profiles)
+profiles: [nestjs]          # inspire-code stack profiles to load (see .claude/skills/inspire-code/profiles)
 surface_conventions: [graphql, rest]   # wire conventions to apply (see .claude/skills/_references/conventions)
 ---
 

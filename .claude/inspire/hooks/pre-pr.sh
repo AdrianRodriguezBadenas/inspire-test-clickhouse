@@ -37,6 +37,12 @@ errors_tested="$PROJECT_ROOT/.inspire/bin/declared-errors-tested.sh"
 criteria_tested="$PROJECT_ROOT/.inspire/bin/criteria-have-tests.sh"
 [ -x "$criteria_tested" ] && { "$criteria_tested" inspire_kb/03_features || STATUS=2; }
 
+# The gate that guards the gates: every quality gate a resolved stack profile declares is
+# actually present in the project's config. Cheap (a few greps) and it protects every other
+# mechanical rule from quietly ceasing to exist.
+profile_gates="$PROJECT_ROOT/.inspire/bin/profile-gates-installed.sh"
+[ -x "$profile_gates" ] && { "$profile_gates" || STATUS=2; }
+
 # The escape-hatch ratchet, unscoped. `pre-commit` deliberately skips commits that
 # touch no configured scope so a preexisting breach cannot block unrelated work; at
 # PR time there is no unrelated work — this is the last gate before a merge, and a

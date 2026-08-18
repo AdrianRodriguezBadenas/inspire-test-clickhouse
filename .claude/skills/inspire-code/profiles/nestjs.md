@@ -2,6 +2,56 @@
 kind: inspire-code-profile
 id: nestjs
 layer: backend
+
+# The machine-checkable half of `## Quality gates` below, verified by
+# `.inspire/bin/profile-gates-installed.sh`. The prose says WHY; this says WHAT MUST BE
+# TRUE, and the two are separate on purpose: the prose deliberately names rules this stack
+# **rejects** (`complexity`), so a validator scraping it would demand the very thing the
+# reasoning refuses.
+#
+# `literal` is grepped verbatim — no globbing, no regex — against `config`, resolved
+# relative to the project's source root. `expect: absent` inverts it, which is how a
+# deliberate non-adoption stays deliberate instead of drifting back in unnoticed.
+gates:
+  - literal: strictTypeChecked
+    config: eslint.config.mjs
+  - literal: ban-ts-comment
+    config: eslint.config.mjs
+  - literal: max-depth
+    config: eslint.config.mjs
+  - literal: max-lines-per-function
+    config: eslint.config.mjs
+  - literal: import-x/no-cycle
+    config: eslint.config.mjs
+  - literal: import-x/no-restricted-paths
+    config: eslint.config.mjs
+  # The resolver is a gate in its own right, not plumbing: without it the two rules above
+  # resolve nothing and silently pass on everything. Measured at 77 of 77 imports.
+  - literal: import-x/resolver-next
+    config: eslint.config.mjs
+  - literal: jest/expect-expect
+    config: eslint.config.mjs
+  - literal: jest/no-disabled-tests
+    config: eslint.config.mjs
+  - literal: jest/no-focused-tests
+    config: eslint.config.mjs
+  - literal: jest/no-conditional-expect
+    config: eslint.config.mjs
+  # Neither is in the plugin's `recommended` preset, so both must be enabled by name.
+  - literal: eslint-comments/require-description
+    config: eslint.config.mjs
+  - literal: eslint-comments/no-unused-disable
+    config: eslint.config.mjs
+  - literal: coverageThreshold
+    config: package.json
+  # Rejected on measured evidence — see `## Quality gates`. Re-adopting it is a decision,
+  # so it must come with an edit here rather than arrive quietly.
+  - literal: "'complexity'"
+    config: eslint.config.mjs
+    expect: absent
+  - literal: recommendedTypeChecked
+    config: eslint.config.mjs
+    expect: absent
 ---
 
 ## Layering
