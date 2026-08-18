@@ -276,7 +276,11 @@ describe('Variants (e2e)', () => {
 
     /** @covers ANL-02-10 */
     it('rejects an over-nested query without reading any data', async () => {
-      const overDeep = Array.from({ length: 11 }).reduce<Record<string, unknown>>(
+      // 10 `not` wrappers around the leaf is depth 11 — the FIRST depth the limit rejects.
+      // It used to be 11 wrappers (depth 12), which is over the line but not on it, so
+      // moving the limit from 10 to 11 left this test passing. A boundary probe has to sit
+      // on the boundary.
+      const overDeep = Array.from({ length: 10 }).reduce<Record<string, unknown>>(
         (inner) => ({ not: inner }),
         { field: 'project_id', op: 'eq', value: 1 },
       );

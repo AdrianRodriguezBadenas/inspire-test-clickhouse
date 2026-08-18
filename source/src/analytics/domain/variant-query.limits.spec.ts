@@ -13,6 +13,23 @@ const nested = (depth: number): VariantCondition =>
   depth <= 1 ? leaf() : { not: nested(depth - 1) };
 
 describe('assertConditionWithinLimits', () => {
+  // These two pin the limits THEMSELVES to their literal values, and they are what lets
+  // every other test below keep deriving from the constants. Without them a change to
+  // either limit moves the whole suite with it: `nested(MAX_CONDITION_DEPTH + 1)` follows
+  // the new value, the interpolated message follows too, and the suite stays green while
+  // the observable limit changed underneath it.
+  //
+  // Found by the mutation drill (tdd.md step 6), not by review: `MAX_CONDITION_DEPTH`
+  // 10 -> 11 and `MAX_CONDITION_NODES` 100 -> 101 each survived every other test in this
+  // file. A limit a caller can observe is behaviour, so moving it must break a test.
+  it('permits condition trees ten levels deep, and no deeper', () => {
+    expect(MAX_CONDITION_DEPTH).toBe(10);
+  });
+
+  it('permits a hundred condition nodes, and no more', () => {
+    expect(MAX_CONDITION_NODES).toBe(100);
+  });
+
   it('accepts a condition at exactly the permitted depth', () => {
     const condition = nested(MAX_CONDITION_DEPTH);
 
