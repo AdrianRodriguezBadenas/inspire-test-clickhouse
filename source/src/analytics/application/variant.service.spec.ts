@@ -2,7 +2,6 @@ import { mock, type MockProxy } from 'jest-mock-extended';
 import { VariantService } from './variant.service';
 import { VariantRepository } from '../infrastructure/variant.repository';
 import { VariantOrigin, VariantType, type Variant, type VariantInput } from '../domain/variant';
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../domain/variant-query';
 import { encodeCursor } from '../domain/variant-cursor';
 import { VariantErrorCode, VariantValidationError } from '../domain/variant-errors';
 
@@ -147,23 +146,23 @@ describe('VariantService', () => {
       expect(page).toEqual({ items: [], next_cursor: null });
     });
 
-    it('asks the store for the default page size when none is given', async () => {
+    it('asks the store for a page of fifty when none is given', async () => {
       repository.findCurrent.mockResolvedValue([]);
 
       await service.query({});
 
       expect(repository.findCurrent).toHaveBeenCalledWith(
-        expect.objectContaining({ limit: DEFAULT_PAGE_SIZE, offset: 0 }),
+        expect.objectContaining({ limit: 50, offset: 0 }),
       );
     });
 
-    it('caps the page size at the maximum', async () => {
+    it('caps the page size at two hundred', async () => {
       repository.findCurrent.mockResolvedValue([]);
 
       await service.query({ limit: 5_000 });
 
       expect(repository.findCurrent).toHaveBeenCalledWith(
-        expect.objectContaining({ limit: MAX_PAGE_SIZE }),
+        expect.objectContaining({ limit: 200 }),
       );
     });
 

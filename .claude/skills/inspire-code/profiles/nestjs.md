@@ -44,6 +44,14 @@ gates:
     config: eslint.config.mjs
   - literal: coverageThreshold
     config: package.json
+  # The lint half of CLAUDE.md rule 2. Declared here so removing the rule is caught, since
+  # the drill that would otherwise notice runs per-diff and only when someone remembers.
+  # The ACTIVATION line, severity included — not the bare rule name, which also appears in
+  # the rule's own definition and comment, so grepping for it would pass even with the rule
+  # switched off. This is the "present but off" limitation the validator's header warns
+  # about, dodged by declaring a literal that only the active form can satisfy.
+  - literal: "'local/no-numeric-constant-from-unit-under-test': 'error'"
+    config: eslint.config.mjs
   # Rejected on measured evidence — see `## Quality gates`. Re-adopting it is a decision,
   # so it must come with an edit here rather than arrive quietly.
   - literal: "'complexity'"
@@ -133,6 +141,22 @@ anything reaches the operator):
 - `eslint-plugin-jest`: `expect-expect` (a test that asserts nothing — the
   characteristic failure of generated tests) · `no-disabled-tests` ·
   `no-focused-tests` · `no-conditional-expect`.
+- **A local rule: a test may not import a *numeric* constant from the code it tests.**
+  This is the lint half of "never build the expected value from the code under test": a
+  threshold imported into a test makes the test move with the code, so changing
+  `MAX_CONDITION_DEPTH` from 10 to 11 leaves the suite green while an observable limit
+  changed. Measured — that mutation survived nine tests in the file that owned it.
+  Scoped to **numbers**, decided by the type checker rather than by naming, and the
+  distinction is the whole reason it has no false positives: a number is a threshold whose
+  value a caller observes, so a test must state it as a literal; a string / object / array
+  constant is usually a registry or schema (the field list a DDL is generated from), where
+  deriving is the point and hard-coding forty names would duplicate the source of truth.
+  Lives inline in `eslint.config.mjs` — a rule this project-shaped does not need a package.
+
+  Why lint and not the drill: the drill finds a weak test after the fact and only when
+  someone runs it, and it **cannot tell a weak test from a shortcut fix to one** — pinning
+  `expect(MAX_CONDITION_DEPTH).toBe(10)` satisfies the drill while testing no behaviour at
+  all. Lint refuses it at the moment of writing.
 
 **Ratcheted** (aggregates; baseline kept outside the repo per Rule 3):
 - **coverage** — `npm run test -- --coverage`; jest's `coverageThreshold` is the in-repo

@@ -53,6 +53,73 @@ if (LAYER_ZONES.length === 0) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Local rule: a test must not import a NUMERIC constant from the code it tests.
+//
+// This is the mechanical half of CLAUDE.md's second non-negotiable — "never build the
+// expected value from the code under test". A threshold imported into a test makes the
+// test move with the code: change `MAX_CONDITION_DEPTH` from 10 to 11 and
+// `nested(MAX_CONDITION_DEPTH + 1)` follows it, the interpolated message follows it, and
+// the suite stays green while the limit a caller can observe has changed. Measured: that
+// exact mutation survived nine tests.
+//
+// The mutation drill catches this, but only after the fact and only if someone runs it —
+// and it cannot tell a weak test from a *shortcut fix* to a weak test. Lint catches it at
+// the moment of writing, which is the only time it is cheap.
+//
+// Scoped to NUMBERS on purpose, decided by the type checker rather than by naming:
+//   - A number is a threshold, a size, a cap. Its value is behaviour a caller observes, so
+//     a test must state it as a literal.
+//   - A string / object / array constant is usually a registry or a schema — the field list
+//     a DDL is generated from, a table name. Deriving from those is the point; hard-coding
+//     forty field names would duplicate the source of truth and rot.
+//
+// Escape hatch: an ordinary eslint-disable, which this config already requires to carry a
+// written reason and which the escape-hatch ratchet counts.
+// ─────────────────────────────────────────────────────────────────────────────
+const noNumericConstantFromUnitUnderTest = {
+  meta: {
+    type: 'problem',
+    docs: { description: 'Disallow importing a numeric constant into a test file' },
+    schema: [],
+    messages: {
+      imported:
+        "Do not import the numeric constant '{{name}}' into a test — the test would move with the code when its value changes. State the number as a literal in the test instead (see CLAUDE.md, rule 2).",
+    },
+  },
+  create(context) {
+    const services = context.sourceCode.parserServices;
+    if (!services?.program) return {};
+    const checker = services.program.getTypeChecker();
+
+    const isNumeric = (node) => {
+      try {
+        const tsNode = services.esTreeNodeToTSNodeMap.get(node);
+        if (!tsNode) return false;
+        const type = checker.getTypeAtLocation(tsNode);
+        // NumberLike covers `number`, numeric literal types and numeric enums. A union is
+        // numeric only if every member is — `number | undefined` still reads as a threshold.
+        const parts = type.isUnion() ? type.types : [type];
+        return parts.every((t) => (t.flags & 296) !== 0); // Number | NumberLiteral | Enum
+      } catch {
+        return false;
+      }
+    };
+
+    return {
+      ImportDeclaration(node) {
+        if (typeof node.source.value !== 'string' || !node.source.value.startsWith('.')) return;
+        for (const spec of node.specifiers) {
+          if (spec.type !== 'ImportSpecifier') continue;
+          if (node.importKind === 'type' || spec.importKind === 'type') continue;
+          if (!isNumeric(spec.local)) continue;
+          context.report({ node: spec, messageId: 'imported', data: { name: spec.local.name } });
+        }
+      },
+    };
+  },
+};
+
 export default tseslint.config(
   { ignores: ['dist/**', 'coverage/**'] },
   eslint.configs.recommended,
@@ -148,8 +215,14 @@ export default tseslint.config(
     // profile: untyped boundaries (debt — shrinks as the boundary gets modelled) and
     // negative-path construction (structural — the test cannot exist otherwise).
     files: ['**/*.spec.ts', '**/*.e2e-spec.ts', 'test/**/*.ts'],
-    plugins: { jest },
+    plugins: {
+      jest,
+      local: { rules: { 'no-numeric-constant-from-unit-under-test': noNumericConstantFromUnitUnderTest } },
+    },
     rules: {
+      // See the rule's own comment above: this is the lint half of CLAUDE.md rule 2.
+      'local/no-numeric-constant-from-unit-under-test': 'error',
+
       // The characteristic failure of a generated test: it runs the new code and asserts
       // nothing, so it passes CI while proving nothing. This is the mechanical half of
       // what the mutation drill checks by hand — a test that claims an acceptance

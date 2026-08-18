@@ -1,7 +1,6 @@
 import { validateVariantQuery } from './variant-query.validation';
 import { VariantErrorCode, VariantValidationError } from './variant-errors';
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, SortDirection, VariantOperator } from './variant-query';
-import { MAX_CONDITION_DEPTH } from './variant-query.limits';
+import { SortDirection, VariantOperator } from './variant-query';
 import type { VariantQuery } from './variant-query';
 
 const codeOf = (act: () => unknown): VariantErrorCode => {
@@ -16,10 +15,10 @@ const codeOf = (act: () => unknown): VariantErrorCode => {
 
 describe('validateVariantQuery', () => {
   describe('page size', () => {
-    it('defaults the page size when none is supplied', () => {
+    it('defaults the page size to fifty when none is supplied', () => {
       const validated = validateVariantQuery({});
 
-      expect(validated.limit).toBe(DEFAULT_PAGE_SIZE);
+      expect(validated.limit).toBe(50);
     });
 
     it('honors a page size within the cap', () => {
@@ -28,10 +27,10 @@ describe('validateVariantQuery', () => {
       expect(validated.limit).toBe(25);
     });
 
-    it('caps an over-large page size at the maximum', () => {
-      const validated = validateVariantQuery({ limit: MAX_PAGE_SIZE + 1 });
+    it('caps a page size of two hundred and one at two hundred', () => {
+      const validated = validateVariantQuery({ limit: 201 });
 
-      expect(validated.limit).toBe(MAX_PAGE_SIZE);
+      expect(validated.limit).toBe(200);
     });
 
     it('rejects a page size below one', () => {
@@ -162,7 +161,8 @@ describe('validateVariantQuery', () => {
     });
 
     it('enforces the depth bound before validating fields', () => {
-      const overDeep = Array.from({ length: MAX_CONDITION_DEPTH + 1 }).reduce<Record<string, unknown>>(
+      // Ten wrappers around the leaf is depth eleven — the first depth the bound rejects.
+      const overDeep = Array.from({ length: 10 }).reduce<Record<string, unknown>>(
         (inner) => ({ not: inner }),
         { field: 'ghost_field', op: 'eq', value: 1 },
       );
