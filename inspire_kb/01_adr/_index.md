@@ -11,7 +11,7 @@ cross-cutting decisions under *Transversales*.
 | [[adr-variant-history-current-projection]] | Append-only variant history with current-version reads | design |
 | [[adr-variant-structured-query]] | Structured query contract for variant reads | design |
 | [[adr-graphql-query-transport]] | GraphQL as an additional read transport, alongside REST | design |
-| [[adr-railway-deployment-topology]] | Railway as the deployment platform, with ClickHouse as a sibling service | design |
+| [[adr-railway-deployment-topology]] | Railway as the deployment platform, with ClickHouse as a sibling service | implemented |
 
 ## Superseded
 

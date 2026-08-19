@@ -50,8 +50,10 @@ moving off a deployed database) is an ADR.
 ## Deployment
 
 Where the product runs, decided in
-[`adr-railway-deployment-topology`](../01_adr/adr-railway-deployment-topology.md). Not yet
-deployed — that ADR is at `design` until an environment exists.
+[`adr-railway-deployment-topology`](../01_adr/adr-railway-deployment-topology.md) and
+**live**: Railway project *Test Inspire Adri* (`Genomcore` workspace), `production`.
+The REST surface, GraphQL and the Swagger UI are served from
+`https://api-production-6d17.up.railway.app` (`/variants`, `/graphql`, `/docs`).
 
 - **Railway**, one project, two services: the application and ClickHouse.
 - **ClickHouse is a sibling service** from the official image with a persistent volume,
@@ -66,6 +68,9 @@ deployed — that ADR is at `design` until an environment exists.
   a dev dependency that a production install does not have.
 - **The app creates its own schema on boot and refuses to start without the store.** A
   green deploy that answers every request with a 500 is the failure this replaces.
+- **Private networking worked with the plain ClickHouse image** — the documented
+  IPv4-only binding trap did not apply to this environment, and no `listen_host` workaround
+  is installed. The ADR records why it was staged and then deliberately removed.
 - **`GET /health` is the readiness probe**, declared as Railway's `healthcheckPath`. It
   queries ClickHouse rather than just answering, and returns `503` naming the dependency
   when the store does not — the `rest` convention's readiness row, distinct from the

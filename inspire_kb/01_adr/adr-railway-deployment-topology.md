@@ -8,8 +8,19 @@ produced:
 ---
 # Railway as the deployment platform, with ClickHouse as a sibling service
 
-**Status:** design
+**Status:** implemented
 **Modules affected:** cross-cutting — every module the service exposes or persists
+**Implemented in:** Railway project *Test Inspire Adri* (`Genomcore` workspace), `production`
+environment — two services: `api`, built from `AdrianRodriguezBadenas/inspire-test-clickhouse`
+@ `main` with Root Directory `/source` and config `/source/railway.json`; and `clickhouse`,
+from `clickhouse/clickhouse-server:24.8-alpine` with a 10GB volume at `/var/lib/clickhouse`,
+private-network only. Public surface: `api-production-6d17.up.railway.app`.
+
+Note on the ladder: this went `design → implemented` without passing through `prototyped`,
+which is a skip. `prototyped` means "validated in an external vertical spike repo", and this
+project has none — `06_spikes/` holds only its template. The rung is optional evidence
+nobody gathered, not a step that was dodged, and the same path was taken by
+[[adr-clickhouse-primary-database]].
 
 ## Context
 
@@ -55,18 +66,28 @@ hiding a real hole.
 
 - The product becomes observable in a shared place, and the ADRs that describe it become
   claims someone can check rather than assertions about a working copy.
-- **Deploy order matters.** The store must be up before the application, because the
-  application now refuses to start without it. A first deploy of both at once may need one
-  retry, which the restart policy covers.
+- **Deploy order matters in principle, and did not bite in practice.** The application
+  refuses to start without its store, and Railway deploys services in parallel rather than in
+  order — so the first deploy of both at once was expected to leave the `api` crash-looping
+  until `clickhouse` answered. It did not: both reported `SUCCESS`, and the healthcheck passed
+  `[1/1]` on its first attempt, because the store came up inside the build time of the app.
+  The restart policy (`ON_FAILURE`, 3 retries) is what covers the case where it does not, and
+  that case is one slow image pull away.
 - **Several application instances would race on the DDL.** `IF NOT EXISTS` makes the race
   harmless, but the moment this service scales past one instance the schema step belongs in
   a pre-deploy command instead of in every boot. That is the trigger to revisit.
 - **Backups and upgrades of ClickHouse are the operator's**, as they are for any
   self-hosted single node. There is no replication and no point-in-time recovery.
-- **ClickHouse over Railway's private network has documented failures**, and the cause is
-  the same one this project's own compose file already carries a comment about: the server
-  binds IPv4 only inside the container. If the application cannot reach it, the fix is a
-  config file setting `<listen_host>::</listen_host>`, not a change to the application.
+- **ClickHouse over Railway's private network worked with the plain image**, and no
+  `<listen_host>::</listen_host>` workaround was needed. This is recorded because the
+  opposite was expected: the failure is documented publicly, and this project's own compose
+  file carries a comment about the same IPv4-only binding. A start-command override to inject
+  that config was staged and then removed deliberately, on the grounds that Railway resolves
+  internal DNS to IPv4 as well in environments created from October 2025 on — so the
+  workaround addressed a condition this environment does not have, while replacing the
+  entrypoint the official image is tested with. Applying it would have risked a failure worse
+  than the one it guarded against. **If a future environment is IPv6-only, the workaround is
+  the answer; it is not needed here.**
 
 ### Breaking changes
 
