@@ -1,7 +1,26 @@
+---
+produced:
+  skill: adr
+  skill_sha: b78410f
+  refs_sha: 263d8dc
+  inspire: 0.6.0
+  at: "2026-08-19"
+---
 # Structured query contract for variant reads
 
-**Status:** design
+**Status:** implemented
 **Modules affected:** [[../02_modules/analytics|analytics]]
+**Implemented in:** `POST /variants/query`
+(`source/src/analytics/controllers/variant.controller.ts:32`), validated by
+`domain/variant-query.validation.ts` and bounded by `domain/variant-query.limits.ts`
+(depth 10, 100 nodes), and translated by `infrastructure/variant-query.translator.ts`.
+Values are bound as ClickHouse query parameters via the client's `query_params` — never
+string-concatenated — and an unknown field or operator is refused before any data is read.
+The page defaults to 50 and caps at 200, clamping rather than rejecting.
+Ladder note: `design → implemented` skips `prototyped`, which means "validated in an
+external vertical spike repo". This project has none, so the rung is optional evidence
+nobody gathered rather than a step dodged — the same path
+[[adr-clickhouse-primary-database]] and [[adr-railway-deployment-topology]] took.
 <!-- Status maturity ladder: design | prototyped | implemented | superseded by [[x]] | rejected. -->
 
 ## Context

@@ -37,6 +37,13 @@ errors_tested="$PROJECT_ROOT/.inspire/bin/declared-errors-tested.sh"
 criteria_tested="$PROJECT_ROOT/.inspire/bin/criteria-have-tests.sh"
 [ -x "$criteria_tested" ] && { "$criteria_tested" inspire_kb/03_features || STATUS=2; }
 
+# The decision layer must not claim less than the code delivers: every ADR a 🟢 Implemented
+# feature rests on is itself `implemented`. Wired only now, deliberately — it was written
+# while three ADRs were stale, and a gate that is red the day it lands is a gate people
+# learn to bypass. It went green when those three were promoted on real evidence.
+adr_maturity="$PROJECT_ROOT/.inspire/bin/adr-maturity-matches-features.sh"
+[ -x "$adr_maturity" ] && { "$adr_maturity" inspire_kb/03_features || STATUS=2; }
+
 # The gate that guards the gates: every quality gate a resolved stack profile declares is
 # actually present in the project's config. Cheap (a few greps) and it protects every other
 # mechanical rule from quietly ceasing to exist.

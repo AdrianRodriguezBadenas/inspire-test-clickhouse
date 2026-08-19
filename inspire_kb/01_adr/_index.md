@@ -8,9 +8,9 @@ cross-cutting decisions under *Transversales*.
 | ADR | Title | Status |
 |-----|-------|--------|
 | [[adr-clickhouse-primary-database]] | ClickHouse as the primary database | implemented |
-| [[adr-variant-history-current-projection]] | Append-only variant history with current-version reads | design |
-| [[adr-variant-structured-query]] | Structured query contract for variant reads | design |
-| [[adr-graphql-query-transport]] | GraphQL as an additional read transport, alongside REST | design |
+| [[adr-variant-history-current-projection]] | Append-only variant history with current-version reads | implemented |
+| [[adr-variant-structured-query]] | Structured query contract for variant reads | implemented |
+| [[adr-graphql-query-transport]] | GraphQL as an additional read transport, alongside REST | implemented |
 | [[adr-railway-deployment-topology]] | Railway as the deployment platform, with ClickHouse as a sibling service | implemented |
 
 ## Superseded

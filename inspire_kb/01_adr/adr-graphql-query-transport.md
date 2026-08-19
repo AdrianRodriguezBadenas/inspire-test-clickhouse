@@ -1,7 +1,26 @@
+---
+produced:
+  skill: adr
+  skill_sha: b78410f
+  refs_sha: 263d8dc
+  inspire: 0.6.0
+  at: "2026-08-19"
+---
 # GraphQL as an additional read transport, alongside REST
 
-**Status:** design
+**Status:** implemented
 **Modules affected:** [[../02_modules/analytics|analytics]]
+**Implemented in:** `source/src/analytics/controllers/variant.resolver.ts` (the `@Query`
+resolver) and `controllers/graphql/variant-graphql.types.ts`, where `VariantField` and
+`VariantOperator` are **derived from the same registry and operator set the domain uses**
+rather than restated — so the schema enums cannot drift from the allow-lists they mirror.
+Both transports are thin adapters over one application service, and 12 parity tests in
+`source/test/variant-parity.e2e-spec.ts` hold that they return the same records in the same
+order, page equivalently, and reject identically. Live at `/graphql`.
+Ladder note: `design → implemented` skips `prototyped`, which means "validated in an
+external vertical spike repo". This project has none, so the rung is optional evidence
+nobody gathered rather than a step dodged — the same path
+[[adr-clickhouse-primary-database]] and [[adr-railway-deployment-topology]] took.
 <!-- Status maturity ladder: design | prototyped | implemented | superseded by [[x]] | rejected. -->
 
 ## Context

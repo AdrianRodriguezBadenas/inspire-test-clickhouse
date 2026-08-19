@@ -1,7 +1,27 @@
+---
+produced:
+  skill: adr
+  skill_sha: b78410f
+  refs_sha: 263d8dc
+  inspire: 0.6.0
+  at: "2026-08-19"
+---
 # Append-only variant history with current-version reads
 
-**Status:** design
+**Status:** implemented
 **Modules affected:** [[../02_modules/analytics|analytics]]
+**Implemented in:**
+`source/src/analytics/infrastructure/variant-table.ddl.ts` — a plain `ENGINE = MergeTree`
+ordered by `(project_id, collection, uri, version_date)`, created idempotently by the
+repository as the module comes up. "Current" is a query, not a second table:
+`variant-query.translator.ts` resolves it with `ORDER BY version_date DESC` plus
+`LIMIT 1 BY` the natural key. What the decision **forbids** is asserted, not assumed —
+`variant-table.ddl.spec.ts:25` fails if the DDL ever contains `ReplacingMergeTree`, and
+nothing in the codebase uses `FINAL`.
+Ladder note: `design → implemented` skips `prototyped`, which means "validated in an
+external vertical spike repo". This project has none, so the rung is optional evidence
+nobody gathered rather than a step dodged — the same path
+[[adr-clickhouse-primary-database]] and [[adr-railway-deployment-topology]] took.
 <!-- Status maturity ladder: design | prototyped | implemented | superseded by [[x]] | rejected.
      design = the design workspace (features + screen spec + horizontal prototype + specs).
      prototyped = validated in an EXTERNAL functional prototype (a vertical spike repo,
