@@ -12,7 +12,7 @@
  * "do not send me requests yet". The caller is a platform, and it acts on the difference.
  */
 
-import { Controller, Get, HttpCode, ServiceUnavailableException } from '@nestjs/common';
+import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ClickHouseConnection } from '../analytics/infrastructure/clickhouse.provider';
 
@@ -31,12 +31,26 @@ interface HealthReport {
 export class HealthController {
   constructor(private readonly connection: ClickHouseConnection) {}
 
+  /**
+   * Sets the status on the response rather than throwing.
+   *
+   * Throwing a `ServiceUnavailableException` looked right and was not: `AppExceptionFilter`
+   * catches everything and rewrites it into the one domain-error shape, so the report was
+   * flattened to `{code:'service_unavailable', message:'Service Unavailable Exception'}` —
+   * losing the only part that matters, WHICH dependency is down. That is exactly what the
+   * convention's readiness row requires the body to carry.
+   *
+   * It survived four unit tests because they exercised the controller in isolation, never
+   * through the filter, and survived the e2e because reaching `503` needs a dead store. A
+   * live probe against a stopped database is what found it.
+   */
   @Get()
-  @HttpCode(200)
   @ApiOperation({ summary: 'Readiness probe — reports whether the service can serve' })
   @ApiResponse({ status: 200, description: 'Ready: every dependency answered.' })
   @ApiResponse({ status: 503, description: 'Not ready: a dependency did not answer.' })
-  async check(): Promise<HealthReport> {
+  async check(
+    @Res({ passthrough: true }) response: { status(code: number): unknown },
+  ): Promise<HealthReport> {
     let clickhouse: DependencyState = 'ok';
 
     try {
@@ -53,9 +67,7 @@ export class HealthController {
       dependencies: { clickhouse },
     };
 
-    if (report.status !== 'ok') {
-      throw new ServiceUnavailableException(report);
-    }
+    response.status(report.status === 'ok' ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE);
 
     return report;
   }

@@ -113,6 +113,71 @@ describe('AppExceptionFilter', () => {
       });
     });
 
+    // The `rest` convention: "Downstream dependency unavailable or timed out -> 502/504.
+    // Never surfaced as 500 — a 500 claims the fault is ours." The service answered 500
+    // for an unreachable ClickHouse, which is a claim about whose fault it is, and it was
+    // wrong. Observed live: the store was stopped and every request answered
+    // `{"statusCode":500,"code":"internal_error"}`.
+    it('answers 502 when the store could not be reached at all', () => {
+      const refused = Object.assign(new Error('connect ECONNREFUSED 10.1.2.3:8123'), {
+        code: 'ECONNREFUSED',
+      });
+
+      filter.catch(refused, httpHost(captured));
+
+      expect(captured.statusCode).toBe(502);
+      expect(captured.body).toEqual({
+        statusCode: 502,
+        code: 'bad_gateway',
+        message: 'The analytics store is unavailable.',
+      });
+    });
+
+    it('answers 504 when the store was reached but did not answer in time', () => {
+      filter.catch(new Error('Timeout error.'), httpHost(captured));
+
+      expect(captured.statusCode).toBe(504);
+      expect(captured.body).toEqual({
+        statusCode: 504,
+        code: 'gateway_timeout',
+        message: 'The analytics store did not respond in time.',
+      });
+    });
+
+    it('keeps 500 when the store answered and the complaint is about our query', () => {
+      // We reached it. "Unknown table expression identifier" is our fault, and the
+      // convention's 500 row is the right one — this is the boundary the 502 must not cross.
+      filter.catch(new Error("Unknown table expression identifier 'variant'"), httpHost(captured));
+
+      expect(captured.statusCode).toBe(500);
+      expect(captured.body).toEqual({
+        statusCode: 500,
+        code: 'internal_error',
+        message: 'Internal server error',
+      });
+    });
+
+    it('leaks no host or port when reporting an unreachable store', () => {
+      const refused = Object.assign(new Error('connect ECONNREFUSED 10.1.2.3:8123'), {
+        code: 'ECONNREFUSED',
+      });
+
+      filter.catch(refused, httpHost(captured));
+
+      expect(JSON.stringify(captured.body)).not.toContain('10.1.2.3');
+      expect(JSON.stringify(captured.body)).not.toContain('8123');
+    });
+
+    it('logs the unreachable store rather than swallowing it', () => {
+      const refused = Object.assign(new Error('connect ECONNREFUSED 10.1.2.3:8123'), {
+        code: 'ECONNREFUSED',
+      });
+
+      filter.catch(refused, httpHost(captured));
+
+      expect(filter['logger'].error).toHaveBeenCalled();
+    });
+
     it('logs the unexpected failure it hid from the client', () => {
       const failure = new Error('ClickHouse socket hang up');
 

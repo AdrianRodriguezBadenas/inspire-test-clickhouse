@@ -20,6 +20,7 @@ import {
 } from '@nestjs/common';
 import { GraphQLError } from 'graphql';
 import { VariantValidationError } from '../analytics/domain/variant-errors';
+import { classifyStoreFailure } from '../analytics/infrastructure/clickhouse-errors';
 
 interface ErrorBody {
   statusCode: number;
@@ -32,6 +33,29 @@ const INTERNAL_ERROR: ErrorBody = {
   statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
   code: 'internal_error',
   message: 'Internal server error',
+};
+
+/**
+ * A store we never reached is not our fault to claim.
+ *
+ * The `rest` surface convention: "Downstream dependency unavailable or timed out —
+ * `502`/`504`. Never surfaced as `500` — a `500` claims the fault is ours." This service
+ * answered `500`, which told every caller the bug was here while the truth was that
+ * ClickHouse was not answering. Observed live, with the store stopped.
+ *
+ * The messages name the dependency and nothing else: no host, no port, no driver text.
+ * A caller learns *what* is unavailable, which is actionable; the address is not theirs.
+ */
+const STORE_UNREACHABLE: ErrorBody = {
+  statusCode: HttpStatus.BAD_GATEWAY,
+  code: 'bad_gateway',
+  message: 'The analytics store is unavailable.',
+};
+
+const STORE_TIMEOUT: ErrorBody = {
+  statusCode: HttpStatus.GATEWAY_TIMEOUT,
+  code: 'gateway_timeout',
+  message: 'The analytics store did not respond in time.',
 };
 
 @Catch()
@@ -74,12 +98,24 @@ export class AppExceptionFilter implements ExceptionFilter {
       };
     }
 
+    // Logged either way: the client gets a sanitized body, the operator gets the cause.
+    // Classifying it does not make it less worth logging — an unreachable store is an
+    // incident, not a routine 4xx.
     this.logger.error(
       `Unhandled failure: ${exception instanceof Error ? exception.message : String(exception)}`,
       exception instanceof Error ? exception.stack : undefined,
     );
 
-    return INTERNAL_ERROR;
+    // Only when we never reached the store. If ClickHouse answered and complained — a bad
+    // query, a missing table — the fault IS ours and `500` is the honest answer.
+    switch (classifyStoreFailure(exception)) {
+      case 'unreachable':
+        return STORE_UNREACHABLE;
+      case 'timeout':
+        return STORE_TIMEOUT;
+      default:
+        return INTERNAL_ERROR;
+    }
   }
 }
 
