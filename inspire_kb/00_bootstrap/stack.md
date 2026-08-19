@@ -59,8 +59,12 @@ The REST surface, GraphQL and the Swagger UI are served from
 - **ClickHouse is a sibling service** from the official image with a persistent volume,
   reachable only on the project's private network (`clickhouse.railway.internal:8123`,
   plain `http`). Never published.
-- **Deploys are git-linked** — pushing the repository is the trigger. No CLI, no
-  credentials in the loop.
+- **Deploys are git-linked by decision, and manual in practice until the GitHub App is
+  installed.** Railway reports `canEnable: false, reason: NO_INSTALLATION` for this service,
+  so a push triggers nothing today — install Railway's GitHub App on the repository
+  (`github.com/apps/railway/installations/new`, or the service's Settings → Source), which is
+  a browser consent flow only an operator can complete. `watchPatterns` is `source/**`, so
+  once the webhook exists a knowledge-base commit will not rebuild the app.
 - The app lives in a subdirectory, so the service carries **Root Directory `/source`** and
   **config file `/source/railway.json`**. Both are platform settings: Railway's config file
   does not follow the Root Directory and cannot declare either one.

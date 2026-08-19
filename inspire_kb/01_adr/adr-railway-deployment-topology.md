@@ -14,7 +14,8 @@ produced:
 environment — two services: `api`, built from `AdrianRodriguezBadenas/inspire-test-clickhouse`
 @ `main` with Root Directory `/source` and config `/source/railway.json`; and `clickhouse`,
 from `clickhouse/clickhouse-server:24.8-alpine` with a 10GB volume at `/var/lib/clickhouse`,
-private-network only. Public surface: `api-production-6d17.up.railway.app`.
+private-network only. Public surface: `api-production-6d17.up.railway.app`. Deployments so far were triggered by
+hand — see the git-linked consequence below for why.
 
 Note on the ladder: this went `design → implemented` without passing through `prototyped`,
 which is a skip. `prototyped` means "validated in an external vertical spike repo", and this
@@ -51,8 +52,16 @@ hiding a real hole.
   volume, reachable only over the project's private network
   (`clickhouse.railway.internal:8123`, plain `http` — the traffic never leaves the
   project). It is not published to the internet.
-- **Deploys are git-linked.** Pushing the repository is the deployment trigger; no CLI and
-  no credentials in the loop, and nothing outside the repository decides what ships.
+- **Deploys are git-linked** — pushing the repository is the intended trigger, with no CLI
+  and no credentials in the loop, and nothing outside the repository deciding what ships.
+  **This is the decision, and as of 2026-08-19 it is not yet in force**: auto-deploy requires
+  Railway's **GitHub App to be installed on the repository**, and it is not. The platform is
+  explicit about it — `enabled: false, canEnable: false, reason: NO_INSTALLATION` — so a push
+  reaches GitHub and nothing reaches Railway. Until an operator installs the app (a browser
+  consent flow that no API token can perform on their behalf), deployments are triggered by
+  hand against a named commit. Watch patterns are already set to `source/**` and verified
+  correct against the docs: patterns operate from the repository root even when a Root
+  Directory is set, so knowledge-base commits will be filtered out once the webhook exists.
 - **The application creates its own schema when it comes up**, and **fails to start** if
   it cannot. The DDL is `CREATE TABLE IF NOT EXISTS`, so repeating it on every boot is
   idempotent. Failing loudly is the point: an instance that cannot reach its store must
