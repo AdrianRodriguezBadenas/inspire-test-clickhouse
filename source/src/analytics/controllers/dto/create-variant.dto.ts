@@ -14,31 +14,53 @@ import { IsArray, IsDate, IsInt, IsNumber, IsOptional, IsString } from 'class-va
 import { VariantOrigin, VariantType, type VariantInput } from '../../domain/variant';
 
 export class CreateVariantDto implements Partial<VariantInput> {
-  @ApiProperty({ description: 'Project scope; supplied by the caller. Part of the natural key.' })
+  @ApiProperty({
+    description: 'Project scope; supplied by the caller. Part of the natural key.',
+    example: 42,
+  })
   @IsOptional()
   @IsInt()
   project_id?: number;
 
-  @ApiProperty({ description: 'Caller-supplied logical version; greatest per natural key is current.' })
+  @ApiProperty({
+    description: 'Caller-supplied logical version; greatest per natural key is current.',
+    // ISO 8601. Without an example Swagger UI generates the string "string", which fails
+    // `@IsDate` — the exact 400 that made "Try it out" unusable.
+    example: '2026-07-01T00:00:00.000Z',
+  })
   @IsOptional()
   @Type(() => Date)
   @IsDate()
   version_date?: Date;
 
-  @ApiProperty({ description: 'Variant URI. Part of the natural key.' })
+  @ApiProperty({
+    description: 'Variant URI. Part of the natural key.',
+    example: 'chr1:12345:A:T',
+  })
   @IsOptional()
   @IsString()
   uri?: string;
 
-  @ApiProperty({ description: 'Enum: GERMLINE / SOMATIC / TRIO / PGx.', enum: VariantOrigin })
+  @ApiProperty({
+    description: 'Enum: GERMLINE / SOMATIC / TRIO / PGx.',
+    enum: VariantOrigin,
+    example: VariantOrigin.GERMLINE,
+  })
   @IsOptional()
   origin?: VariantOrigin;
 
-  @ApiProperty({ description: 'Enum: SNV/INDEL / SV / CNV.', enum: VariantType })
+  @ApiProperty({
+    description: 'Enum: SNV/INDEL / SV / CNV.',
+    enum: VariantType,
+    example: VariantType.SNV_INDEL,
+  })
   @IsOptional()
   type?: VariantType;
 
-  @ApiProperty({ description: 'Source collection. Part of the natural key.' })
+  @ApiProperty({
+    description: 'Source collection. Part of the natural key.',
+    example: 'study-1',
+  })
   @IsOptional()
   @IsString()
   collection?: string;

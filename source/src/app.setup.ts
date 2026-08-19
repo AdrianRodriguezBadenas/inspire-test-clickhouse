@@ -31,8 +31,15 @@ export function setupApp(app: INestApplication): void {
  * The Swagger surface. adr-graphql-query-transport keeps REST indefinitely precisely
  * for this: it is how the team exercises the API by hand.
  */
-export function setupSwagger(app: INestApplication): void {
-  const document = SwaggerModule.createDocument(
+/**
+ * Build the OpenAPI document.
+ *
+ * Split out from `setupSwagger` so a test can assert against the very document Swagger UI
+ * serves — specifically, that the example body it offers is one the API actually accepts. A
+ * "Try it out" that answers 400 is documentation that lies, and nothing else would catch it.
+ */
+export function buildOpenApiDocument(app: INestApplication): ReturnType<typeof SwaggerModule.createDocument> {
+  return SwaggerModule.createDocument(
     app,
     new DocumentBuilder()
       .setTitle('Variant store')
@@ -44,6 +51,8 @@ export function setupSwagger(app: INestApplication): void {
       .setVersion('0.1.0')
       .build(),
   );
+}
 
-  SwaggerModule.setup('docs', app, document);
+export function setupSwagger(app: INestApplication): void {
+  SwaggerModule.setup('docs', app, buildOpenApiDocument(app));
 }
