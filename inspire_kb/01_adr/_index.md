@@ -12,6 +12,7 @@ cross-cutting decisions under *Transversales*.
 | [[adr-variant-structured-query]] | Structured query contract for variant reads | implemented |
 | [[adr-graphql-query-transport]] | GraphQL as an additional read transport, alongside REST | implemented |
 | [[adr-railway-deployment-topology]] | Railway as the deployment platform, with ClickHouse as a sibling service | implemented |
+| [[adr-request-observability-log]] | One JSON line per request boundary, named by the use case it serves | design |
 
 ## Superseded
 

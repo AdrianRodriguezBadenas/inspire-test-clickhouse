@@ -11,6 +11,7 @@ import { VariantService } from '../application/variant.service';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { QueryVariantsDto } from './dto/query-variants.dto';
 import { CreatedVariantDto, VariantPageDto } from './dto/variant-response.dto';
+import { LogsAction } from '../../common/observability/request-log.interceptor';
 
 @ApiTags('variants')
 @Controller('variants')
@@ -18,6 +19,7 @@ export class VariantController {
   constructor(private readonly service: VariantService) {}
 
   @Post()
+  @LogsAction('analytics.variant.create')
   @ApiOperation({
     summary: 'Insert a variant record',
     description:
@@ -30,6 +32,7 @@ export class VariantController {
   }
 
   @Post('query')
+  @LogsAction('analytics.variant.query')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Query current variants',

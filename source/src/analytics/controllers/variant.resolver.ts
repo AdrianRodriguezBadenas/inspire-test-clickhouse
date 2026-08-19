@@ -15,11 +15,13 @@ import {
   VariantOrderInput,
   VariantPageObject,
 } from './graphql/variant-graphql.types';
+import { LogsAction } from '../../common/observability/request-log.interceptor';
 
 @Resolver(() => VariantPageObject)
 export class VariantResolver {
   constructor(private readonly service: VariantService) {}
 
+  @LogsAction('analytics.variant.query')
   @Query(() => VariantPageObject, {
     name: 'variants',
     description: 'The current version of each matching variant, paginated.',

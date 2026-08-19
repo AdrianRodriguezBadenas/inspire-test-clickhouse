@@ -5,7 +5,9 @@
 
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { Reflector } from '@nestjs/core';
 import { AppExceptionFilter } from './common/app-exception.filter';
+import { RequestLogInterceptor } from './common/observability/request-log.interceptor';
 
 export function setupApp(app: INestApplication): void {
   app.useGlobalPipes(
@@ -18,6 +20,10 @@ export function setupApp(app: INestApplication): void {
       transform: true,
     }),
   );
+  // Before the filter in registration, so a request that fails still produces its pair of
+  // lines: the interceptor observes the error on its way out and re-throws for the filter to
+  // translate.
+  app.useGlobalInterceptors(new RequestLogInterceptor(app.get(Reflector)));
   app.useGlobalFilters(new AppExceptionFilter());
 }
 
