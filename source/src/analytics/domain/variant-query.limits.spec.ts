@@ -1,130 +1,91 @@
-import { Condition, QueryValidationError } from './variant-query';
-import {
-  MAX_CONDITION_DEPTH,
-  MAX_CONDITION_NODES,
-  assertQueryWithinLimits,
-} from './variant-query.limits';
+import { assertConditionWithinLimits } from './variant-query.limits';
+import { VariantErrorCode, VariantValidationError } from './variant-errors';
+import type { VariantCondition } from './variant-query';
 
-const leaf = (): Condition => ({ field: 'project_id', op: 'eq', value: 42 });
+const leaf = (): VariantCondition => ({ field: 'project_id', op: 'eq', value: 1 });
 
-/** A chain of nested `and` nodes `depth` levels deep, with a leaf at the bottom. */
-const nestedAnd = (depth: number): Condition => {
-  let node: Condition = leaf();
-  for (let i = 1; i < depth; i++) {
-    node = { and: [node] };
-  }
-  return node;
-};
+/** A chain of `not` nodes `depth` levels deep, with a leaf at the bottom. */
+const nested = (depth: number): VariantCondition =>
+  depth <= 1 ? leaf() : { not: nested(depth - 1) };
 
-/** A chain of nested `not` nodes `depth` levels deep, with a leaf at the bottom. */
-const nestedNot = (depth: number): Condition => {
-  let node: Condition = leaf();
-  for (let i = 1; i < depth; i++) {
-    node = { not: node };
-  }
-  return node;
-};
+/** A single combinator over `leaves` leaves — so `leaves + 1` nodes in total. */
+const wide = (leaves: number): VariantCondition => ({ and: Array.from({ length: leaves }, leaf) });
 
-/** One `and` node holding `count` sibling leaves — wide rather than deep. */
-const wideAnd = (count: number): Condition => ({
-  and: Array.from({ length: count }, leaf),
-});
+// The limits are written as literals here, never imported from the module under test.
+// Importing them makes a test move with the code: `nested(MAX_CONDITION_DEPTH + 1)` follows
+// the constant to its new value, the interpolated message follows too, and the suite stays
+// green while the limit a caller can observe has changed. Measured with the mutation drill
+// (tdd.md step 6): with the constants imported, 10 -> 11 and 100 -> 101 survived every test
+// in this file.
+describe('assertConditionWithinLimits', () => {
+  describe('depth', () => {
+    it('accepts a condition ten levels deep', () => {
+      const act = (): void => assertConditionWithinLimits(nested(10));
 
-describe('assertQueryWithinLimits', () => {
-  it('accepts an absent condition tree', () => {
-    // WHEN
-    const act = () => assertQueryWithinLimits(undefined);
+      expect(act).not.toThrow();
+    });
 
-    // THEN
+    it('rejects a condition eleven levels deep', () => {
+      const act = (): void => assertConditionWithinLimits(nested(11));
+
+      expect(act).toThrow(VariantValidationError);
+      expect(act).toThrow('Query condition nests deeper than the permitted 10 levels.');
+    });
+
+    it('reports an over-deep condition as query_too_complex', () => {
+      let thrown: unknown;
+      try {
+        assertConditionWithinLimits(nested(11));
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(VariantValidationError);
+      expect((thrown as VariantValidationError).code).toBe(VariantErrorCode.QUERY_TOO_COMPLEX);
+    });
+  });
+
+  describe('node count', () => {
+    it('accepts a condition of a hundred nodes', () => {
+      const act = (): void => assertConditionWithinLimits(wide(99));
+
+      expect(act).not.toThrow();
+    });
+
+    it('rejects a condition of a hundred and one nodes', () => {
+      const act = (): void => assertConditionWithinLimits(wide(100));
+
+      expect(act).toThrow('Query condition carries more than the permitted 100 nodes.');
+    });
+
+    it('counts nodes across sibling branches, not only along the deepest path', () => {
+      const branch = (): VariantCondition => ({ or: Array.from({ length: 40 }, leaf) });
+      const condition: VariantCondition = { and: [branch(), branch(), branch()] };
+
+      const act = (): void => assertConditionWithinLimits(condition);
+
+      expect(act).toThrow('Query condition carries more than the permitted 100 nodes.');
+    });
+  });
+
+  it('accepts an absent condition', () => {
+    const act = (): void => assertConditionWithinLimits(undefined);
+
     expect(act).not.toThrow();
   });
 
-  it('accepts a tree exactly at the depth limit', () => {
-    // GIVEN
-    const where = nestedAnd(MAX_CONDITION_DEPTH);
+  it('ignores null-valued combinator keys, which every GraphQL input node carries', () => {
+    const condition: VariantCondition = {
+      and: null,
+      or: null,
+      not: null,
+      field: 'project_id',
+      op: 'eq',
+      value: 1,
+    };
 
-    // WHEN
-    const act = () => assertQueryWithinLimits(where);
+    const act = (): void => assertConditionWithinLimits(condition);
 
-    // THEN
     expect(act).not.toThrow();
-  });
-
-  it('rejects a tree one level beyond the depth limit', () => {
-    // GIVEN
-    const where = nestedAnd(MAX_CONDITION_DEPTH + 1);
-
-    // WHEN
-    const act = () => assertQueryWithinLimits(where);
-
-    // THEN
-    expect(act).toThrow(QueryValidationError);
-    expect(act).toThrow(
-      `Query condition tree is nested deeper than the permitted ${MAX_CONDITION_DEPTH} levels.`,
-    );
-  });
-
-  it('counts `not` nodes towards the depth limit', () => {
-    // GIVEN
-    const where = nestedNot(MAX_CONDITION_DEPTH + 1);
-
-    // WHEN
-    const act = () => assertQueryWithinLimits(where);
-
-    // THEN
-    expect(act).toThrow(QueryValidationError);
-  });
-
-  it('rejects a tree beyond the node-count limit', () => {
-    // GIVEN
-    const where = wideAnd(MAX_CONDITION_NODES + 1);
-
-    // WHEN
-    const act = () => assertQueryWithinLimits(where);
-
-    // THEN
-    expect(act).toThrow(QueryValidationError);
-    expect(act).toThrow(
-      `Query condition tree has more than the permitted ${MAX_CONDITION_NODES} conditions.`,
-    );
-  });
-
-  it('accepts a wide tree exactly at the node-count limit', () => {
-    // GIVEN — the `and` node itself counts, so it holds one fewer leaf
-    const where = wideAnd(MAX_CONDITION_NODES - 1);
-
-    // WHEN
-    const act = () => assertQueryWithinLimits(where);
-
-    // THEN
-    expect(act).not.toThrow();
-  });
-
-  it('reports the failure with the query_too_complex code', () => {
-    // GIVEN
-    const where = nestedAnd(MAX_CONDITION_DEPTH + 1);
-
-    // WHEN
-    let caught: unknown;
-    try {
-      assertQueryWithinLimits(where);
-    } catch (error) {
-      caught = error;
-    }
-
-    // THEN
-    expect(caught).toBeInstanceOf(QueryValidationError);
-    expect((caught as QueryValidationError).code).toBe('query_too_complex');
-  });
-
-  it('rejects a deep tree without exhausting the call stack', () => {
-    // GIVEN — far deeper than any legitimate query; the guard must not recurse into it
-    const where = nestedAnd(200_000);
-
-    // WHEN
-    const act = () => assertQueryWithinLimits(where);
-
-    // THEN
-    expect(act).toThrow(QueryValidationError);
   });
 });

@@ -8,7 +8,7 @@ description: "Lifecycle of a feature / use case: create / review / update / dele
 ## Scope
 
 A **feature** is a use case, captured as a file
-`.inspire_kb/03_features/{module}/{use-case}.md` and indexed in that module's hub
+`inspire_kb/03_features/{module}/{use-case}.md` and indexed in that module's hub
 `02_modules/{module}.md`. This skill owns feature-scoped operations and their propagation
 across the KB layers: screens (`05_screens`), prototype (`/prototype`),
 specs (`04_domain`), and ADRs (`01_adr`).
@@ -30,24 +30,33 @@ specs (`04_domain`), and ADRs (`01_adr`).
 Reviews one feature across all layers. Runs inline (no agents).
 
 1. **Locate the feature.** Find the use-case file in
-   `.inspire_kb/03_features/{module}/`. Read: description, actor/personas,
+   `inspire_kb/03_features/{module}/`. Read: description, actor/personas,
    dependencies, priority, state, ADRs referenced. Identify the module from the
    folder.
-2. **screen spec coverage.** In `.inspire_kb/05_screens/{module}/`, search each screen's
-   `**Features:**` line for this feature ID; cross-reference the screen spec `_index.md`
-   coverage table. Flag if no screen covers a UI-facing feature; note "No UI
-   expected" for backend/infrastructure features.
+2. **screen spec coverage.** Search each screen's `**Features:**` line for this
+   feature ID; cross-reference the screen spec `_index.md` coverage table. Where to
+   look follows the shape of the screens tree, which
+   [`_references/surface-scope.md`](../_references/surface-scope.md) keys to the
+   roster: `inspire_kb/05_screens/{module}/` while the suite has at most one UI
+   surface; `05_screens/{surface}/{module}/` plus `05_screens/shared/{module}/`,
+   walked once per UI surface in the feature's blast radius, once it has two or
+   more. Flag if no screen covers a UI-facing feature — per surface, since a
+   feature can be covered in one and uncovered in another; note "No UI expected"
+   for backend/infrastructure features.
 3. **Prototype coverage.** For each covering screen, verify it is reflected in the
-   horizontal prototype at `/prototype`, and note drift (pending component
-   adoption, hardcoded data, ADR gaps). Insights land in the specs / screens / ADRs,
-   not a prototype learnings file.
+   horizontal prototype at `/prototype` — under the shell of the surface whose tree
+   the screen sits in, a `shared/` screen under every shell that serves it, once
+   the prototype runs one shell per UI surface — and note drift (pending component
+   adoption, hardcoded data, ADR gaps). Insights land in the specs / screens /
+   ADRs, not a prototype learnings file.
 4. **Specs (SDD) coverage.** Find action descriptors whose `## Why` wikilinks back
-   to this feature. Search `.inspire_kb/04_domain/**/*.md` for `[[{feature-id}]]`.
+   to this feature. Search `inspire_kb/04_domain/**/*.md` for `[[{feature-id}]]`.
    Flag if zero realizing actions exist. For each, report `id`, `lifecycle`, and a
    one-line `## Why` summary.
 5. **ADR alignment.** If the feature references an ADR (`[[adr-xxx]]`), verify it
-   exists and is `accepted`. Surface prototype drift items that reference
-   unimplemented ADR requirements.
+   exists and is not superseded or rejected — an ADR present is the current decision
+   at its maturity. Surface prototype drift items that reference unimplemented ADR
+   requirements.
 
 **Output format (single):**
 
@@ -75,6 +84,11 @@ Reviews one feature across all layers. Runs inline (no agents).
 
 ## OK
 ```
+
+The screen-spec line is **one row per UI surface in the feature's blast radius** —
+`screen spec ({surface})`, listing what that surface's tree covers plus the
+`shared/{module}/` screens it inherits. When the blast radius is a single UI
+surface that is the one unqualified row shown above, exactly as before.
 
 ### Batch mode (module)
 
@@ -128,7 +142,7 @@ feature or one module's features:
 2. **Candidate surfacing + narrowing** — read the feature file, infer the actions
    that would realize it (most features map to 1–3), apply plural→singular
    canonicalization on action ids silently, check whether each already exists at
-   `.inspire_kb/04_domain/{module}/{entity}/{action}.md`, and dialogue with the
+   `inspire_kb/04_domain/{module}/{entity}/{action}.md`, and dialogue with the
    operator to pick a set. One focused question at a time; follow the
    conversational conventions of [`/inspire_domain`](../inspire-domain/SKILL.md).
 3. **Chained authoring** (only on an explicit "start" signal) — create one
@@ -136,7 +150,7 @@ feature or one module's features:
    `/inspire_domain define {id}` via the Skill tool; `inspire-domain` runs its
    socratic interview and may co-evolve the action + entity documents in one flow.
 
-Scan is read-only with respect to `.inspire_kb/04_domain/`; authoring lives in
+Scan is read-only with respect to `inspire_kb/04_domain/`; authoring lives in
 `/inspire_domain`. Pure exploration leaves no tasks created. **Batch mode**
 (`scan {module}`) expands this over every feature in the module's hub `02_modules/{module}.md`.
 
@@ -152,13 +166,15 @@ implemented but realizing actions still `lifecycle: draft`). Render via
 Create a new feature/use-case file in a module. **Required arg:**
 `{module}/{feature-id}` (e.g. `ai-agents/AIA-08`).
 
-1. **Verify** the module exists (`.inspire_kb/02_modules/{module}.md`).
+1. **Verify** the module exists (`inspire_kb/02_modules/{module}.md`).
 2. **Ask** the user: name, description (2–5 sentences), actor/personas,
    dependencies (other feature IDs), priority (Core / Important / Nice-to-have),
-   state (🟡 Planned default), ADRs to reference.
+   state (🟡 Planned default), ADRs to reference, and the blast radius (the
+   `surfaces:` frontmatter of the template below — resolved, and only ever asked
+   about, per [`_references/surface-scope.md`](../_references/surface-scope.md)).
 3. **Run the acceptance-criteria quality gate** (below) on the criteria before
    writing, then **create the use-case file**
-   `.inspire_kb/03_features/{module}/{feature-id}.md` from the template below.
+   `inspire_kb/03_features/{module}/{feature-id}.md` from the template below.
 4. **Update the module hub** (`02_modules/{module}.md`) — add the row to its
    use-case index and fix the totals.
 5. **Report next steps:**
@@ -181,7 +197,7 @@ dependencies, promoting priority, changing state
 2. Present a diff proposal to the user. If the `## Acceptance criteria` change, run
    them through the acceptance-criteria quality gate (below) before proposing.
 3. On approval, apply it.
-4. If renamed: update the module hub `02_modules/{module}.md`, and grep `.inspire_kb/` (and any
+4. If renamed: update the module hub `02_modules/{module}.md`, and grep `inspire_kb/` (and any
    project code) for references to the old ID and offer fixes.
 5. Run `review {feature-id}` to verify no drift.
 
@@ -191,21 +207,30 @@ Remove a feature and clean up all references.
 
 1. **Confirm** with the user: list every file touching this feature.
 2. Delete the use-case file
-   (`.inspire_kb/03_features/{module}/{feature-id}.md`).
+   (`inspire_kb/03_features/{module}/{feature-id}.md`).
 3. Remove its row from the module hub `02_modules/{module}.md` and fix the totals.
 4. **screen spec:** remove the feature ID from any screen's `**Features:**` line; if a
    screen's only feature was this one, flag it for removal (that's `/inspire_screens`'s
    job) and update the screen spec `_index.md` coverage table.
 5. **Prototype:** remove references in `/prototype`; note any
-   `.inspire_kb/06_spikes/` entry that referenced this feature.
-6. **ADRs:** grep `.inspire_kb/01_adr/`; if an ADR mentions this feature, flag it —
+   `inspire_kb/06_spikes/` entry that referenced this feature.
+6. **ADRs:** grep `inspire_kb/01_adr/`; if an ADR mentions this feature, flag it —
    may need an ADR update.
 
 ## Use case template
 
-Use this template at `.inspire_kb/03_features/{module}/{feature-id}.md`:
+Use this template at `inspire_kb/03_features/{module}/{feature-id}.md`. Its
+frontmatter declares the feature's **blast radius** — the surfaces this use case
+affects. What an absent field means, when the field becomes mandatory and how a
+surface id resolves are defined in
+[`_references/surface-scope.md`](../_references/surface-scope.md); read them
+there, they are not restated here.
 
 ```markdown
+---
+surfaces: [portal, admin]   # blast radius — list of roster ids, or `all`
+---
+
 # {FEATURE-ID}: {Feature Name}
 
 > Source: [[../../02_modules/{module}]]
@@ -230,9 +255,32 @@ Use this template at `.inspire_kb/03_features/{module}/{feature-id}.md`:
 {What is true after successful completion}
 
 ## Acceptance criteria
-- [ ] {Testable criterion 1}
-- [ ] {Testable criterion 2}
+- [ ] ({feature-id}-1) {Testable criterion 1}
+- [ ] ({feature-id}-2) {Testable criterion 2}
 ```
+
+**Every criterion carries a stable id**, and it is not decoration: `criteria-have-tests.sh`
+requires a test to claim it, so an untested criterion becomes a blocking finding instead of
+something a reviewer has to notice. Three rules make the id trustworthy:
+
+- **Assigned once, never renumbered.** Deleting criterion 3 retires `-3`; the next new one
+  is `-11`, not `-3`. Positional numbering was rejected on purpose — inserting a criterion
+  would silently re-point every test after it, which is the drift the gate exists to kill.
+- **A test claims it with `@covers`**, in an annotation above the test:
+
+  ```ts
+  /** @covers ANL-02-6 */
+  it('returns an empty page rather than an error when nothing matches', …)
+  ```
+
+- **The id never goes in the test name.** Test names are read on every CI failure, and an
+  opaque token there is noise for whoever arrives next. Keep the name a sentence about
+  behavior — ideally the criterion's own words, which is what makes the pair legible
+  without the id being visible at all.
+
+One criterion may be claimed by several tests, and one test may claim several ids
+(`@covers ANL-02-1 ANL-02-2`) when it genuinely exercises both. What is *not* allowed is a
+criterion no test claims.
 
 ## Acceptance-criteria quality gate
 
@@ -255,6 +303,28 @@ Check each criterion on three dimensions:
 - **Verifiable** — checkable without reading the implementation; describes WHAT not
   HOW (stays functional, per Rule 3); no contradictions between criteria; happy
   path **and** error/edge paths covered.
+
+Then check what the criteria **must not restate**, and what they **must** cover. The
+line between the two is the project's resolved surface convention
+([`_references/conventions/README.md`](../_references/conventions/README.md)):
+
+- **Do not write criteria for the convention's always-present cases.** "Returns 404 for
+  an unknown id", "returns 401 without a token" — these hold for every action of the
+  transport, `/inspire_code tdd` derives them, and restating them per feature is the
+  duplication that drifts the day the convention changes.
+- **Do write a criterion for every error the feature's actions declare** in their
+  `## Errors`. That is the half a convention cannot derive, because the error is
+  domain-specific. A declared error with no criterion is the gap this gate exists to
+  catch.
+- **Do write a criterion for anything that deviates** from the convention — a deviation
+  is by definition not derivable.
+- **Never work backwards from the test suite.** A test with no criterion is normal: it may
+  come from the convention, from an ADR invariant, or from ordinary engineering (a unit
+  test, a regression test, a security probe). Inventing a criterion to give such a test a
+  home inflates the contract with programming conventions and is the failure mode this
+  section guards against. The one honest reason to add a criterion from a test is that the
+  test proves **user-observable behavior the feature genuinely forgot to state** — and
+  then it is the feature that was incomplete, not the test that was orphaned.
 
 Then a short **devil's advocate** pass — name at least a couple of ways the feature
 could break that the criteria don't yet cover (malformed/missing data, an external
@@ -288,13 +358,18 @@ depends on a behavioral contract, chain to `/inspire_domain`.
 6. **N/A is valid.** Not every feature needs every layer — infrastructure features
    may have no UI.
 7. **Drift is informational.** `## Current prototype` drift items don't block
-   reviews unless they contradict an accepted ADR.
+   reviews unless they contradict a current ADR (one not superseded or rejected).
 8. **Batch synthesis.** In batch review, identify patterns and produce a
    prioritized correction plan grouped by fix skill.
 9. **Consult the task tracker** (`/inspire_task list`, or
-   `node .inspire_kb/99_tracker/serve.mjs`) for tracked drift; don't re-surface it
+   `node inspire_kb/99_tracker/serve.mjs`) for tracked drift; don't re-surface it
    as new.
 10. **Acceptance criteria pass the quality gate before they land.** `create` and
     `update` run the gate above; criteria that can't be made testable signal a
     spec/design gap to resolve (here or via `/inspire_domain`), not something to
     write as-is.
+11. **Stamp every write.** After `create`, `update`, or `delete` writes the
+    use-case file, run `.inspire/bin/trust.sh stamp <file> --skill feature`
+    ([trust-stamps](../_references/trust-stamps.md#stamping)); rewriting one
+    that carries `endorsed:` is disclosed to the operator first
+    ([trust-stamps](../_references/trust-stamps.md#endorsement)).

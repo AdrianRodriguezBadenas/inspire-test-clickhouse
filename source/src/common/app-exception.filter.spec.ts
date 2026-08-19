@@ -1,103 +1,230 @@
-import { ArgumentsHost, BadRequestException } from '@nestjs/common';
-import { mock, MockProxy } from 'jest-mock-extended';
-import { Response } from 'express';
-import { QueryValidationError } from '../analytics/domain/variant-query';
+import { ArgumentsHost, BadRequestException, NotFoundException } from '@nestjs/common';
+import { GraphQLError } from 'graphql';
 import { AppExceptionFilter } from './app-exception.filter';
+import {
+  VariantErrorCode,
+  VariantValidationError,
+} from '../analytics/domain/variant-errors';
 
-/** An ArgumentsHost reporting the given context type, carrying a mock response. */
-const hostFor = (
-  type: 'http' | 'graphql',
-  response: MockProxy<Response>,
-): ArgumentsHost => {
-  const host = mock<ArgumentsHost>();
-  host.getType.mockReturnValue(type);
-  host.switchToHttp.mockReturnValue({
-    getResponse: () => response,
-    getRequest: () => ({}),
-    getNext: () => undefined,
-  } as never);
-  return host;
+interface CapturedResponse {
+  statusCode?: number;
+  body?: unknown;
+}
+
+/** An HTTP `ArgumentsHost` that records what the filter wrote. */
+const httpHost = (captured: CapturedResponse): ArgumentsHost => {
+  const response = {
+    status(code: number) {
+      captured.statusCode = code;
+      return this;
+    },
+    json(body: unknown) {
+      captured.body = body;
+      return this;
+    },
+  };
+
+  return {
+    getType: () => 'http',
+    switchToHttp: () => ({ getResponse: () => response }),
+  } as unknown as ArgumentsHost;
 };
+
+const graphqlHost = (): ArgumentsHost =>
+  ({ getType: () => 'graphql' }) as unknown as ArgumentsHost;
 
 describe('AppExceptionFilter', () => {
   let filter: AppExceptionFilter;
-  let response: MockProxy<Response>;
+  let captured: CapturedResponse;
 
   beforeEach(() => {
     filter = new AppExceptionFilter();
-    response = mock<Response>();
-    response.status.mockReturnValue(response);
+    captured = {};
+    jest.spyOn(filter['logger'], 'error').mockImplementation(() => undefined);
   });
 
-  it('shapes an HttpException with its own status and body', () => {
-    // GIVEN
-    const exception = new BadRequestException({
-      code: 'missing_required_field',
-      message: 'A required field is missing: project_id.',
-      fields: ['project_id'],
+  describe('over HTTP', () => {
+    it('answers a rejected input with 400 and the descriptor error code', () => {
+      const rejection = new VariantValidationError(
+        VariantErrorCode.UNKNOWN_QUERY_FIELD,
+        'Unknown query field: ghost.',
+      );
+
+      filter.catch(rejection, httpHost(captured));
+
+      expect(captured.statusCode).toBe(400);
+      expect(captured.body).toEqual({
+        statusCode: 400,
+        code: 'unknown_query_field',
+        message: 'Unknown query field: ghost.',
+      });
     });
 
-    // WHEN
-    filter.catch(exception, hostFor('http', response));
+    it('answers a missing required field with its own code', () => {
+      const rejection = new VariantValidationError(
+        VariantErrorCode.MISSING_REQUIRED_FIELD,
+        'A required field is missing: uri.',
+      );
 
-    // THEN
-    expect(response.status).toHaveBeenCalledWith(400);
-    expect(response.json).toHaveBeenCalledWith({
-      code: 'missing_required_field',
-      message: 'A required field is missing: project_id.',
-      fields: ['project_id'],
+      filter.catch(rejection, httpHost(captured));
+
+      expect(captured.body).toEqual({
+        statusCode: 400,
+        code: 'missing_required_field',
+        message: 'A required field is missing: uri.',
+      });
+    });
+
+    it('keeps the status and message of a framework HTTP exception', () => {
+      filter.catch(new NotFoundException('No such route'), httpHost(captured));
+
+      expect(captured.statusCode).toBe(404);
+      expect(captured.body).toEqual({
+        statusCode: 404,
+        code: 'not_found',
+        message: 'No such route',
+      });
+    });
+
+    it('reports a DTO validation failure as a bad request, keeping its details', () => {
+      const rejection = new BadRequestException({
+        message: ['project_id must be an integer number'],
+        statusCode: 400,
+      });
+
+      filter.catch(rejection, httpHost(captured));
+
+      expect(captured.statusCode).toBe(400);
+      expect(captured.body).toEqual({
+        statusCode: 400,
+        code: 'bad_request',
+        message: 'project_id must be an integer number',
+      });
+    });
+
+    it('answers an unexpected failure with 500 and no internal detail', () => {
+      filter.catch(new Error('ClickHouse socket hang up at 10.0.0.4:9000'), httpHost(captured));
+
+      expect(captured.statusCode).toBe(500);
+      expect(captured.body).toEqual({
+        statusCode: 500,
+        code: 'internal_error',
+        message: 'Internal server error',
+      });
+    });
+
+    // The `rest` convention: "Downstream dependency unavailable or timed out -> 502/504.
+    // Never surfaced as 500 — a 500 claims the fault is ours." The service answered 500
+    // for an unreachable ClickHouse, which is a claim about whose fault it is, and it was
+    // wrong. Observed live: the store was stopped and every request answered
+    // `{"statusCode":500,"code":"internal_error"}`.
+    it('answers 502 when the store could not be reached at all', () => {
+      const refused = Object.assign(new Error('connect ECONNREFUSED 10.1.2.3:8123'), {
+        code: 'ECONNREFUSED',
+      });
+
+      filter.catch(refused, httpHost(captured));
+
+      expect(captured.statusCode).toBe(502);
+      expect(captured.body).toEqual({
+        statusCode: 502,
+        code: 'bad_gateway',
+        message: 'The analytics store is unavailable.',
+      });
+    });
+
+    it('answers 504 when the store was reached but did not answer in time', () => {
+      filter.catch(new Error('Timeout error.'), httpHost(captured));
+
+      expect(captured.statusCode).toBe(504);
+      expect(captured.body).toEqual({
+        statusCode: 504,
+        code: 'gateway_timeout',
+        message: 'The analytics store did not respond in time.',
+      });
+    });
+
+    it('keeps 500 when the store answered and the complaint is about our query', () => {
+      // We reached it. "Unknown table expression identifier" is our fault, and the
+      // convention's 500 row is the right one — this is the boundary the 502 must not cross.
+      filter.catch(new Error("Unknown table expression identifier 'variant'"), httpHost(captured));
+
+      expect(captured.statusCode).toBe(500);
+      expect(captured.body).toEqual({
+        statusCode: 500,
+        code: 'internal_error',
+        message: 'Internal server error',
+      });
+    });
+
+    it('leaks no host or port when reporting an unreachable store', () => {
+      const refused = Object.assign(new Error('connect ECONNREFUSED 10.1.2.3:8123'), {
+        code: 'ECONNREFUSED',
+      });
+
+      filter.catch(refused, httpHost(captured));
+
+      expect(JSON.stringify(captured.body)).not.toContain('10.1.2.3');
+      expect(JSON.stringify(captured.body)).not.toContain('8123');
+    });
+
+    it('logs the unreachable store rather than swallowing it', () => {
+      const refused = Object.assign(new Error('connect ECONNREFUSED 10.1.2.3:8123'), {
+        code: 'ECONNREFUSED',
+      });
+
+      filter.catch(refused, httpHost(captured));
+
+      expect(filter['logger'].error).toHaveBeenCalled();
+    });
+
+    it('logs the unexpected failure it hid from the client', () => {
+      const failure = new Error('ClickHouse socket hang up');
+
+      filter.catch(failure, httpHost(captured));
+
+      expect(filter['logger'].error).toHaveBeenCalledWith(
+        'Unhandled failure: ClickHouse socket hang up',
+        failure.stack,
+      );
     });
   });
 
-  it('maps a query-validation failure to 400 with its domain code', () => {
-    // GIVEN
-    const exception = new QueryValidationError(
-      'query_too_complex',
-      'Query condition tree is nested too deeply.',
-    );
+  describe('over GraphQL', () => {
+    it('rejects with the same code and message a REST client would see', () => {
+      const rejection = new VariantValidationError(
+        VariantErrorCode.UNKNOWN_QUERY_OPERATOR,
+        'Unsupported operator: regex.',
+      );
 
-    // WHEN
-    filter.catch(exception, hostFor('http', response));
+      const act = (): void => filter.catch(rejection, graphqlHost());
 
-    // THEN
-    expect(response.status).toHaveBeenCalledWith(400);
-    expect(response.json).toHaveBeenCalledWith({
-      code: 'query_too_complex',
-      message: 'Query condition tree is nested too deeply.',
+      expect(act).toThrow(GraphQLError);
+      expect(act).toThrow('Unsupported operator: regex.');
     });
-  });
 
-  it('hides an unexpected failure behind a generic 500', () => {
-    // GIVEN
-    const exception = new Error('Connection to clickhouse:9000 refused');
+    it('carries the error code in the GraphQL extensions', () => {
+      const rejection = new VariantValidationError(
+        VariantErrorCode.QUERY_TOO_COMPLEX,
+        'Query condition nests deeper than the permitted 10 levels.',
+      );
 
-    // WHEN
-    filter.catch(exception, hostFor('http', response));
+      let thrown: unknown;
+      try {
+        filter.catch(rejection, graphqlHost());
+      } catch (error) {
+        thrown = error;
+      }
 
-    // THEN
-    expect(response.status).toHaveBeenCalledWith(500);
-    expect(response.json).toHaveBeenCalledWith({
-      code: 'internal_error',
-      message: 'An unexpected error occurred.',
+      expect(thrown).toBeInstanceOf(GraphQLError);
+      expect((thrown as GraphQLError).extensions).toEqual({ code: 'query_too_complex' });
     });
-  });
 
-  // Writing to the Express response on a GraphQL request would corrupt the
-  // GraphQL envelope; graphql.config.ts shapes that route's errors instead.
-  it('re-throws on a GraphQL request without touching the response', () => {
-    // GIVEN
-    const exception = new QueryValidationError(
-      'unknown_query_field',
-      'Unknown query field: bogus.',
-    );
+    it('hides an unexpected failure behind a generic GraphQL error', () => {
+      const act = (): void => filter.catch(new Error('socket hang up'), graphqlHost());
 
-    // WHEN
-    const act = () => filter.catch(exception, hostFor('graphql', response));
-
-    // THEN
-    expect(act).toThrow(exception);
-
-    expect(response.status).not.toHaveBeenCalled();
-    expect(response.json).not.toHaveBeenCalled();
+      expect(act).toThrow('Internal server error');
+      expect(act).not.toThrow('socket hang up');
+    });
   });
 });

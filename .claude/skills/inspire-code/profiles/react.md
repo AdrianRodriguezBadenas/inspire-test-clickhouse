@@ -39,6 +39,52 @@ prop-drilled component state.
 - **security**: forms, auth, and navigation validate input and guard against
   XSS/open-redirect.
 
+## Quality gates
+**Absolute** (eslint):
+- `typescript-eslint` **`strictTypeChecked`**, not `recommendedTypeChecked`.
+- `complexity` (max 10) · `max-depth` · `max-lines-per-function` — a component that
+  trips these is one that should have been split, or had its logic pushed into a hook.
+- `eslint-plugin-import`: `import/no-cycle`, plus `import/no-restricted-paths` so
+  components cannot reach infrastructure directly — the `## Layering` boundary
+  enforced instead of reviewed.
+- `eslint-plugin-jsx-a11y` — accessibility belongs here, not in a lens a human
+  re-reads on every diff; the `accessibility` review focus above then covers only what
+  lint cannot see (focus management, announcement order).
+- the test runner's lint plugin: `expect-expect` · `no-disabled-tests` ·
+  `no-focused-tests`.
+
+**Ratcheted** (aggregates; baseline kept outside the repo per Rule 3):
+- **coverage** — the test runner's threshold as the in-repo floor.
+- **bundle size**, when the project ships to browsers — a budget that may shrink,
+  never grow.
+
+**Dropped, with the reason** (Rule 2's third branch):
+- **mutation score as a ratcheted metric** — replaced by the per-diff **mutation
+  drill** ([`../references/tdd.md`](../references/tdd.md), step 6). Same trade as the
+  backend profile: no aggregate number for test strength, no coverage of code older
+  than the drill, in exchange for no tool to own and no baseline to keep honest. On
+  components the highest-value mutations are the render-path ones — invert a conditional
+  render, drop a `key`, swap a handler's argument — because a test that only asserts
+  "renders without crashing" survives every one of them.
+
+**Escape hatches** (Rule 4 — named, justified, counted):
+- `@typescript-eslint/ban-ts-comment` at `allow-with-description`; `@ts-expect-error`
+  over `@ts-ignore`, since it expires once the real error is fixed.
+- `@eslint-community/eslint-plugin-eslint-comments`: `require-description` ·
+  `no-unlimited-disable` · `no-unused-disable`.
+- Counted and ratcheted in-repo (`.escape-hatches.json`, enforced by
+  `.inspire/bin/escape-hatch-ratchet.sh`) alongside `as any` / `x!` and any
+  `eslint-disable` of `jsx-a11y` — an accessibility suppression is the one most worth
+  seeing a number for, because nothing else in the pipeline notices it. Give it its own
+  pattern id rather than folding it into the general count, so it cannot hide behind a
+  budget spent on type casts.
+
 ## Build & verify
 build: `npm run build` · lint: `npm run lint` · types: `npx tsc --noEmit` ·
 tests: `npm run test` + `npm run test:e2e`
+
+**Monorepo scoping.** In a workspace, scope every command to the target surface's
+package: `pnpm --filter {package} build|lint|test` (or the workspace tool's
+equivalent — `npm -w {package} …`, `turbo run test --filter={package}`, `nx test
+{package}`). Never run a workspace-wide install or build from a subcommand when a
+filtered form exists; a UI surface is verified by its own package going green.

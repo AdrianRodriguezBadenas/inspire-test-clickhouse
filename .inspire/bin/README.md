@@ -1,12 +1,12 @@
-# `.claude/bin/` — SDD Validation Library
+# `.inspire/bin/` — SDD Validation Library
 
 Source of truth for what "review" means in the SDD layer. Shell scripts that
-read filesystem state under `.inspire_kb/04_domain/`, parse `.md` frontmatter, evaluate
+read filesystem state under `inspire_kb/04_domain/`, parse `.md` frontmatter, evaluate
 rules, and emit structured findings.
 
 Two consumers wrap this library:
 
-- **Hooks** (`.claude/hooks/*.sh`) call these scripts at tool-call time
+- **Hooks** (`.claude/inspire/hooks/*.sh`) call these scripts at tool-call time
   via Claude Code's PreToolUse Bash matchers — `pre-commit.sh` on
   `git commit`, `pre-pr.sh` on `gh pr create`.
 - **Skills** invoke them via the `Bash` tool inside conversational
@@ -50,19 +50,48 @@ The library implements the **quality gate** (per D24 in the SDD V3 reframe adden
 | `rationale-wikilink.sh` | (9) Entity `## Rationale` (or action `## Purpose` ∪ `## Behavior`) contains ≥1 `[[wikilink]]`. | Warning if object is draft; error if accepted+. |
 | `wikilinks-resolve.sh` | (10) Every `[[wikilink]]` in body resolves to an existing file (SDD object id or PDD/ADR basename). | Warning if object is draft; error if accepted+. |
 
+### Source-code gates — the rules that do not read the KB alone
+
+| Script | Checks | Notes |
+|---|---|---|
+| `escape-hatch-ratchet.sh` | The count of deliberate rule suppressions in the product code may fall, never rise. Per-pattern ceilings from `.escape-hatches.json`; `--update` can only lower them. | Reads `source/`, **not** `inspire_kb/`. Deliberately **absent from `review.sh`'s default rule list** — `/inspire_domain review` is a KB review and must not start judging product code. Invoked directly by `pre-commit.sh` and by `/inspire_code review`. |
+| `declared-errors-tested.sh` | Every error an action declares in `## Errors` appears as a literal in a test file. | Reads both the KB and `source/`. Lifecycle-progressive: warning at `draft` (TDD writes the spec first), error at `accepted`+, skipped at `superseded`. Also absent from the default list, for the same reason. Wired into `pre-pr.sh`. |
+| `criteria-have-tests.sh` | Every acceptance criterion carries a **stable id**, claimed by a test through `/** @covers {id} */`. | The larger half of "nothing untested" — errors are the small half. The id lives in an annotation, never in the test name, so CI output stays readable. Two findings: `carries no id` (untraceable by construction, so reported even when tests exist) and `is claimed by no test`. Severity from the feature's `**State:**`: warning at 🟡 Planned, error at 🔵 In progress and 🟢 Implemented. Wired into `pre-pr.sh`. |
+
+Test-file discovery for both is in `_lib.sh` (`sdd_find_test_files`, `sdd_literal_in_tests`,
+`sdd_covers_in_tests`, `SDD_TEST_SCOPE`, `SDD_TEST_GLOBS`) rather than duplicated per rule —
+the two gates must agree on what a test file *is*, and the glob set already had one
+silent-miss bug in it.
+
+These three source-code gates are **tools with a verdict**, in the sense `trust.sh` below is a tool without
+one: they emit findings and can block, but they sit outside `review.sh`'s default rules
+because everything else here validates the knowledge base and these validate the code the
+knowledge base produced. They are stack-agnostic — every pattern and every ceiling comes
+from the project's config, so the runtime never hardcodes one language's suppression
+syntax. Rationale and the ceiling-in-repo exception:
+`.claude/skills/_references/quality-gates.md` Rule 4.
+
+### Gates over the KB's own claims
+
+| Script | Checks | Notes |
+|---|---|---|
+| `adr-maturity-matches-features.sh` | Every ADR a 🟢 Implemented feature links to is itself at `implemented`. | The decision layer was the only KB layer no rule read. One-directional, like `touched-entity-lifecycle.sh`: it walks features and never walks ADRs demanding features. Only 🟢 features are checked — at 🟡/🔵 a `design`-stage ADR is the ladder working. Findings are grouped per ADR, since the fix is a single `promote` however many features cite it. Takes the **features** root, so it is absent from `review.sh`'s default list, which passes the spec root. |
+| `profile-gates-installed.sh` | Every quality gate a resolved stack profile **declares** in its `gates:` frontmatter is present in the project's config (or absent, where the profile rejects it). | The gate that guards the gates. Reads the frontmatter, never the `## Quality gates` prose: that prose deliberately names rules the stack **rejects**, so scraping it would demand what the reasoning refuses. Cannot see a rule that is present but switched `off` — stated in its header rather than implied. Wired into `pre-pr.sh`. |
+
 ### Library
 
 | Script | Purpose | When it runs |
 |---|---|---|
 | `review.sh` | Composite check — orchestrates the rule scripts; aggregates findings. | `pre-commit.sh` hook on `git commit`, `pre-pr.sh` hook on `gh pr create`, the `review` skill subcommands, and the `promote` skill subcommands (write-test-revert). |
 | `_lib.sh` | Shared helpers (frontmatter parsing, body-section parsing, wikilink unwrapping, severity calculation, finding emission). Sourced by other scripts. | (library — not invoked directly) |
+| `trust.sh` | **A tool, not a review rule.** Artifact trust: `skill-sha` (composite hash of a deployed skill dir), `stamp` (the machine-owned `produced:` block), `endorse` (the human-owned `endorsed:` block), `report` (the trust signal). It emits no findings, is deliberately absent from `review.sh`'s `DEFAULT_RULES`, and `report` exits 0 whatever it finds — a signal, never a gate. Needs only `yq` (no `jq`), and does not source `_lib.sh`. | `stamp` / `endorse` from the owning skills; `report --summary` from the `pre-pr.sh` hook; the full `report` from `/inspire_workspace review` and the `/inspire:update` tail. |
 
 ## Output format
 
 Findings are emitted to **stderr** as JSON lines (one finding per line):
 
 ```json
-{"severity":"error","rule":"entity-coherence","target":".inspire_kb/04_domain/auth/user/auth.user.create.md","message":"..."}
+{"severity":"error","rule":"entity-coherence","target":"inspire_kb/04_domain/auth/user/auth.user.create.md","message":"..."}
 ```
 
 Severity is one of `error` (blocking) or `warning` (advisory).
@@ -74,19 +103,19 @@ they want to format findings for conversational presentation).
 
 ## Scope
 
-The library targets action descriptors under `.inspire_kb/04_domain/{module}/{entity}/{module}.{entity}.{action}.md` and the per-entity documents at `.inspire_kb/04_domain/{module}/{entity}/{module}.{entity}.md` (one fewer dotted segment than the action filenames — the segment count is how discovery distinguishes them). Surface bindings (HTTP routes, CLI commands, MCP tools) live in surface-binding artifacts owned by their respective modules and are not produced by anything in this library.
+The library targets action descriptors under `inspire_kb/04_domain/{module}/{entity}/{module}.{entity}.{action}.md` and the per-entity documents at `inspire_kb/04_domain/{module}/{entity}/{module}.{entity}.md` (one fewer dotted segment than the action filenames — the segment count is how discovery distinguishes them). Surface bindings (HTTP routes, CLI commands, MCP tools) live in surface-binding artifacts owned by their respective modules and are not produced by anything in this library.
 
 ## Manual invocation
 
 ```bash
 # Run the full review on the whole workspace
-.claude/bin/review.sh
+.inspire/bin/review.sh
 
 # Run a single rule
-.claude/bin/entity-coherence.sh
+.inspire/bin/entity-coherence.sh
 
 # Scope to a single module
-.claude/bin/review.sh .inspire_kb/04_domain/auth
+.inspire/bin/review.sh inspire_kb/04_domain/auth
 ```
 
 Scripts read from the **current working directory** as the repo root. Run

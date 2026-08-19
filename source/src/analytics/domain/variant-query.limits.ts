@@ -1,80 +1,79 @@
-// Size limits on the structured query AST (analytics::variant::query).
-//
-// The condition tree is recursive and client-supplied, so an arbitrarily nested
-// tree is a denial-of-service vector: the translator walks it recursively and
-// would exhaust the call stack before any query reaches ClickHouse.
-//
-// These limits live in the domain layer, and the application service enforces
-// them — deliberately NOT in a transport adapter. ANL-02 requires a query to be
-// rejected identically whichever access route it arrives through, so a
-// GraphQL-only validation rule (or an HTTP-only pipe) would break that parity and
-// leave the other route exposed.
+/**
+ * Bounds on the size of a client condition tree.
+ *
+ * ANL-02 requires that "a query nested beyond the permitted depth or complexity is
+ * rejected before any data is read", and adr-graphql-query-transport makes depth and
+ * complexity caps mandatory because a recursive input type otherwise accepts
+ * arbitrarily deep nesting — a cheap denial-of-service vector.
+ *
+ * **Open spec gap.** Neither the feature nor the ADR states the numeric bounds. The
+ * values below are this implementation's choice and need recording in the KB
+ * (`/inspire_domain` on `analytics.variant.query`, or the ADR): a depth of 10 covers
+ * any hand-written query builder nesting seen so far, and 100 nodes bounds the
+ * translated SQL to a size ClickHouse plans without strain.
+ */
 
-import { Condition, QueryValidationError } from './variant-query';
+import { queryTooComplex } from './variant-errors';
+import type { VariantCondition } from './variant-query';
 
-/** Maximum nesting depth of the condition tree, counting leaves. */
+/** Maximum nesting levels of the condition tree; a bare leaf is depth 1. */
 export const MAX_CONDITION_DEPTH = 10;
 
-/** Maximum total number of nodes (leaves plus and/or/not nodes) in the tree. */
-export const MAX_CONDITION_NODES = 200;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/** The child conditions of a node, or an empty list for a leaf. */
-function childrenOf(node: Record<string, unknown>): unknown[] {
-  if (Array.isArray(node.and)) return node.and;
-  if (Array.isArray(node.or)) return node.or;
-  if (node.not !== undefined) return [node.not];
-  return [];
-}
+/** Maximum total nodes (combinators + leaves) in the condition tree. */
+export const MAX_CONDITION_NODES = 100;
 
 /**
- * Reject a condition tree that is too deep or too large, before it is translated
- * or any data is read.
+ * Reject a condition tree that exceeds the depth or node bounds.
  *
- * Walks the tree **iteratively** with an explicit stack. A recursive check would
- * overflow on exactly the input it exists to reject, which would turn the guard
- * into a second instance of the bug.
- *
- * Structural validation (unknown fields, bad operators, malformed nodes) is not
- * this function's job — that is the translator's, which owns the field allow-list.
+ * Runs before any field/operator validation and before a query is built, so a hostile
+ * payload is cheap to refuse. The walk is iterative on purpose: recursing over an
+ * attacker-supplied tree would overflow the stack before the depth check could fire.
  */
-export function assertQueryWithinLimits(where: Condition | undefined): void {
-  if (where === undefined) {
-    return;
-  }
+export function assertConditionWithinLimits(condition: VariantCondition | null | undefined): void {
+  if (condition === null || condition === undefined) return;
 
-  const stack: Array<{ node: unknown; depth: number }> = [
-    { node: where, depth: 1 },
-  ];
+  const pending: { node: VariantCondition; depth: number }[] = [{ node: condition, depth: 1 }];
   let nodes = 0;
 
-  while (stack.length > 0) {
-    // Non-null: guarded by stack.length above.
-    const { node, depth } = stack.pop() as { node: unknown; depth: number };
+  while (pending.length > 0) {
+    const { node, depth } = pending.pop() as { node: VariantCondition; depth: number };
 
-    nodes++;
+    nodes += 1;
     if (nodes > MAX_CONDITION_NODES) {
-      throw new QueryValidationError(
-        'query_too_complex',
-        `Query condition tree has more than the permitted ${MAX_CONDITION_NODES} conditions.`,
+      throw queryTooComplex(
+        `Query condition carries more than the permitted ${MAX_CONDITION_NODES} nodes.`,
       );
     }
     if (depth > MAX_CONDITION_DEPTH) {
-      throw new QueryValidationError(
-        'query_too_complex',
-        `Query condition tree is nested deeper than the permitted ${MAX_CONDITION_DEPTH} levels.`,
+      throw queryTooComplex(
+        `Query condition nests deeper than the permitted ${MAX_CONDITION_DEPTH} levels.`,
       );
     }
 
-    if (!isRecord(node)) {
-      // Malformed — the translator reports it with the precise reason.
-      continue;
-    }
     for (const child of childrenOf(node)) {
-      stack.push({ node: child, depth: depth + 1 });
+      pending.push({ node: child, depth: depth + 1 });
     }
   }
+}
+
+/**
+ * The child nodes of a condition, whichever combinator it uses.
+ *
+ * Deliberately blind to whether the node is well-formed — bounding the tree comes
+ * first, and a node that mixes combinators must be *counted*, not trusted. Keys
+ * carrying `null` are skipped: every GraphQL input node materializes all of them.
+ */
+function childrenOf(node: VariantCondition): VariantCondition[] {
+  const children: VariantCondition[] = [];
+
+  for (const branch of [node.and, node.or]) {
+    if (Array.isArray(branch)) children.push(...branch.filter(isNode));
+  }
+  if (isNode(node.not)) children.push(node.not);
+
+  return children;
+}
+
+function isNode(value: unknown): value is VariantCondition {
+  return typeof value === 'object' && value !== null;
 }

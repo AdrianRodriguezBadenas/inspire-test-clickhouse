@@ -1,6 +1,0 @@
-{
-  "exit": 1,
-  "findings": [
-    { "rule": "entity-coherence", "message_substring": "write-on-external" }
-  ]
-}

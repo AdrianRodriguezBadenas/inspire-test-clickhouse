@@ -1,30 +1,28 @@
-import { mock, MockProxy } from 'jest-mock-extended';
-import { NewVariant, Variant } from '../domain/variant';
-import { Condition, QueryValidationError } from '../domain/variant-query';
-import { MAX_CONDITION_DEPTH } from '../domain/variant-query.limits';
-import { VariantRepository } from '../infrastructure/variant.repository';
+import { mock, type MockProxy } from 'jest-mock-extended';
 import { VariantService } from './variant.service';
+import { VariantRepository } from '../infrastructure/variant.repository';
+import { VariantOrigin, VariantType, type Variant, type VariantInput } from '../domain/variant';
+import { encodeCursor } from '../domain/variant-cursor';
+import { VariantErrorCode, VariantValidationError } from '../domain/variant-errors';
 
-const newVariant = (overrides: Partial<NewVariant> = {}): NewVariant => ({
+const INGEST_TIME = new Date('2026-07-28T10:30:00.000Z');
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+const aVariantInput = (overrides: Partial<VariantInput> = {}): VariantInput => ({
   project_id: 42,
-  uri: 'urn:variant:1',
-  origin: 'GERMLINE',
-  type: 'SNV/INDEL',
-  collection: 'col-a',
-  version_date: '2024-01-01T00:00:00.000Z',
+  collection: 'study-1',
+  uri: 'chr1:12345:A:T',
+  origin: VariantOrigin.GERMLINE,
+  type: VariantType.SNV_INDEL,
+  version_date: new Date('2026-07-01T00:00:00.000Z'),
   ...overrides,
 });
 
-// A stored variant carrying only the required fields (optionals omitted).
-const storedVariant = (id: string): Variant => ({
-  id,
-  project_id: 42,
-  created_at: new Date(),
-  version_date: '2024-01-01T00:00:00.000Z',
-  uri: `urn:variant:${id}`,
-  origin: 'GERMLINE',
-  type: 'SNV/INDEL',
-  collection: 'col-a',
+const aStoredVariant = (overrides: Partial<Variant> = {}): Variant => ({
+  ...aVariantInput(),
+  id: '11111111-1111-4111-8111-111111111111',
+  created_at: INGEST_TIME,
+  ...overrides,
 });
 
 describe('VariantService', () => {
@@ -32,159 +30,210 @@ describe('VariantService', () => {
   let service: VariantService;
 
   beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(INGEST_TIME);
     repository = mock<VariantRepository>();
     service = new VariantService(repository);
   });
 
-  // ANL-01 AC: valid record → stored and returns the generated id;
-  //            created_at is system-set; the insert adds a new record.
-  it('stores the variant and returns its generated id', async () => {
-    // GIVEN
-    const input = newVariant();
+  afterEach(() => {
+    jest.useRealTimers();
+  });
 
-    // WHEN
-    const result = await service.create(input);
+  describe('create', () => {
+    it('stores the record and returns the id identifying it', async () => {
+      const input = aVariantInput();
 
-    // THEN
-    expect(result.id).toMatch(/^[0-9a-f-]{36}$/);
+      const created = await service.create(input);
 
-    expect(repository.insert).toHaveBeenCalledTimes(1);
-    expect(repository.insert).toHaveBeenCalledWith({
-      ...input,
-      id: result.id,
-      created_at: expect.any(Date),
+      expect(created.id).toMatch(UUID_SHAPE);
+
+      const [persisted] = repository.insert.mock.calls[0];
+      expect(persisted.id).toBe(created.id);
+    });
+
+    it('persists the whole submitted record alongside the system fields', async () => {
+      const input = aVariantInput({ score: 0.42, hpo: ['HP:0001250'] });
+
+      const created = await service.create(input);
+
+      expect(repository.insert).toHaveBeenCalledWith({
+        ...input,
+        id: created.id,
+        created_at: INGEST_TIME,
+      });
+    });
+
+    it('sets the ingest timestamp itself and keeps the client version_date', async () => {
+      const input = aVariantInput({ version_date: new Date('2026-06-15T08:00:00.000Z') });
+
+      await service.create(input);
+
+      const [persisted] = repository.insert.mock.calls[0];
+      expect(persisted.created_at).toEqual(INGEST_TIME);
+      expect(persisted.version_date).toEqual(new Date('2026-06-15T08:00:00.000Z'));
+    });
+
+    it('ignores a client-supplied ingest timestamp', async () => {
+      const input = { ...aVariantInput(), created_at: new Date('2020-01-01T00:00:00.000Z') };
+
+      await service.create(input);
+
+      const [persisted] = repository.insert.mock.calls[0];
+      expect(persisted.created_at).toEqual(INGEST_TIME);
+    });
+
+    it('ignores a client-supplied id', async () => {
+      const input = { ...aVariantInput(), id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' };
+
+      const created = await service.create(input);
+
+      expect(created.id).not.toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    });
+
+    it('leaves an omitted optional field out of the stored record', async () => {
+      const input = aVariantInput();
+
+      await service.create(input);
+
+      const [persisted] = repository.insert.mock.calls[0];
+      expect(persisted.score).toBeUndefined();
+      expect(persisted.gene_symbol).toBeUndefined();
+    });
+
+    it('rejects a record missing a required field without touching the store', async () => {
+      const input = { ...aVariantInput(), collection: '' };
+
+      await expect(service.create(input)).rejects.toThrow(
+        'A required field is missing: collection.',
+      );
+
+      expect(repository.insert).not.toHaveBeenCalled();
+    });
+
+    it('rejects a record whose enumerated field is out of range without touching the store', async () => {
+      const input = aVariantInput({ type: 'FUSION' as VariantType });
+
+      await expect(service.create(input)).rejects.toThrow(
+        'Field type must be one of: SNV/INDEL, SV, CNV.',
+      );
+
+      expect(repository.insert).not.toHaveBeenCalled();
+    });
+
+    it('generates a different id for each record', async () => {
+      const first = await service.create(aVariantInput());
+      const second = await service.create(aVariantInput());
+
+      expect(first.id).not.toBe(second.id);
     });
   });
 
-  // ANL-01 AC: the ingest timestamp is set by the system, not taken from input.
-  it('sets created_at itself', async () => {
-    // GIVEN
-    const input = newVariant();
+  describe('query', () => {
+    it('returns the current variants the store matched', async () => {
+      const stored = aStoredVariant();
+      repository.findCurrent.mockResolvedValue([stored]);
 
-    // WHEN
-    await service.create(input);
+      const page = await service.query({});
 
-    // THEN
-    const stored = repository.insert.mock.calls[0][0];
-    expect(stored.created_at).toBeInstanceOf(Date);
-  });
-
-  // ANL-01 AC: the caller-supplied version_date is stored as given.
-  it('keeps the caller-supplied version_date', async () => {
-    // GIVEN
-    const input = newVariant({ version_date: '2023-06-15T12:00:00.000Z' });
-
-    // WHEN
-    await service.create(input);
-
-    // THEN
-    const stored = repository.insert.mock.calls[0][0];
-    expect(stored.version_date).toBe('2023-06-15T12:00:00.000Z');
-  });
-
-  // ANL-01 AC: a record with only the required fields is accepted; optionals empty.
-  it('accepts a record carrying only the required fields', async () => {
-    // GIVEN
-    const input = newVariant();
-
-    // WHEN
-    const result = await service.create(input);
-
-    // THEN
-    expect(result.id).toBeDefined();
-
-    const stored = repository.insert.mock.calls[0][0];
-    expect(stored.score).toBeUndefined();
-  });
-
-  // A repository failure surfaces as a wrapped Error carrying the cause.
-  it('wraps a repository failure, preserving the cause', async () => {
-    // GIVEN
-    const dbError = new Error('clickhouse unreachable');
-    repository.insert.mockRejectedValue(dbError);
-
-    // WHEN
-    const act = service.create(newVariant());
-
-    // THEN
-    await expect(act).rejects.toMatchObject({
-      message: 'Failed to store variant',
-      cause: dbError,
+      expect(page).toEqual({ items: [stored], next_cursor: null });
     });
-  });
 
-  // ANL-02 AC: default page size is 50; no more results → null cursor.
-  it('lists with the default page size and no cursor when results fit one page', async () => {
-    // GIVEN
-    const rows = [storedVariant('a'), storedVariant('b')];
-    repository.queryCurrent.mockResolvedValue(rows);
+    it('returns an empty page when nothing matches, rather than failing', async () => {
+      repository.findCurrent.mockResolvedValue([]);
 
-    // WHEN
-    const page = await service.query({});
+      const page = await service.query({ where: { field: 'project_id', op: 'eq', value: 999 } });
 
-    // THEN
-    expect(page).toEqual({ items: rows, next_cursor: null });
+      expect(page).toEqual({ items: [], next_cursor: null });
+    });
 
-    expect(repository.queryCurrent).toHaveBeenCalledWith(undefined, undefined, 51, 0);
-  });
+    it('asks the store for a page of fifty when none is given', async () => {
+      repository.findCurrent.mockResolvedValue([]);
 
-  // ANL-02 AC: when more results remain, a next cursor is returned and the page is
-  // trimmed to the requested size.
-  it('returns a next cursor when more results remain', async () => {
-    // GIVEN — asks for 2, repository yields 3 (limit + 1) signalling more.
-    const rows = [storedVariant('a'), storedVariant('b'), storedVariant('c')];
-    repository.queryCurrent.mockResolvedValue(rows);
+      await service.query({});
 
-    // WHEN
-    const page = await service.query({ limit: 2 });
+      expect(repository.findCurrent).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 50, offset: 0 }),
+      );
+    });
 
-    // THEN
-    expect(page.items).toEqual([rows[0], rows[1]]);
-    expect(page.next_cursor).toBe(Buffer.from('2').toString('base64'));
+    it('caps the page size at two hundred', async () => {
+      repository.findCurrent.mockResolvedValue([]);
 
-    expect(repository.queryCurrent).toHaveBeenCalledWith(undefined, undefined, 3, 0);
-  });
+      await service.query({ limit: 5_000 });
 
-  // ANL-02 AC: the page size is capped at 200.
-  it('caps the page size at 200', async () => {
-    // GIVEN
-    repository.queryCurrent.mockResolvedValue([]);
+      expect(repository.findCurrent).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 200 }),
+      );
+    });
 
-    // WHEN
-    await service.query({ limit: 500 });
+    it('hands back a cursor when the store found more rows than the page holds', async () => {
+      const overflowing = Array.from({ length: 3 }, (_, index) =>
+        aStoredVariant({ uri: `chr1:${index}:A:T` }),
+      );
+      repository.findCurrent.mockResolvedValue(overflowing);
 
-    // THEN
-    expect(repository.queryCurrent).toHaveBeenCalledWith(undefined, undefined, 201, 0);
-  });
+      const page = await service.query({ limit: 2 });
 
-  // ANL-02 AC: a cursor resumes from the encoded offset.
-  it('resumes from the cursor offset', async () => {
-    // GIVEN
-    repository.queryCurrent.mockResolvedValue([]);
-    const cursor = Buffer.from('2').toString('base64');
+      expect(page.items).toHaveLength(2);
+      expect(page.next_cursor).toBe(encodeCursor(2));
+    });
 
-    // WHEN
-    await service.query({ limit: 2, cursor });
+    it('trims the row that only signalled the next page', async () => {
+      const overflowing = Array.from({ length: 3 }, (_, index) =>
+        aStoredVariant({ uri: `chr1:${index}:A:T` }),
+      );
+      repository.findCurrent.mockResolvedValue(overflowing);
 
-    // THEN
-    expect(repository.queryCurrent).toHaveBeenCalledWith(undefined, undefined, 3, 2);
-  });
+      const page = await service.query({ limit: 2 });
 
-  // ANL-02 AC: a query nested beyond the permitted depth is rejected before any
-  // data is read. Enforced here, in the one place both access routes share.
-  it('rejects an over-nested query before reading any data', async () => {
-    // GIVEN
-    let where: Condition = { field: 'project_id', op: 'eq', value: 42 };
-    for (let i = 0; i < MAX_CONDITION_DEPTH; i++) {
-      where = { and: [where] };
-    }
+      expect(page.items.map((item) => item.uri)).toEqual(['chr1:0:A:T', 'chr1:1:A:T']);
+    });
 
-    // WHEN
-    const act = () => service.query({ where });
+    it('advances the cursor from the offset it was given', async () => {
+      repository.findCurrent.mockResolvedValue(Array.from({ length: 3 }, () => aStoredVariant()));
 
-    // THEN
-    await expect(act).rejects.toThrow(QueryValidationError);
+      const page = await service.query({ limit: 2, cursor: encodeCursor(10) });
 
-    expect(repository.queryCurrent).not.toHaveBeenCalled();
+      expect(page.next_cursor).toBe(encodeCursor(12));
+    });
+
+    it('reports no further page when the store filled the page exactly', async () => {
+      repository.findCurrent.mockResolvedValue(Array.from({ length: 2 }, () => aStoredVariant()));
+
+      const page = await service.query({ limit: 2 });
+
+      expect(page.next_cursor).toBeNull();
+    });
+
+    it('rejects a query on an unknown field without touching the store', async () => {
+      await expect(
+        service.query({ where: { field: 'ghost_field', op: 'eq', value: 1 } }),
+      ).rejects.toThrow('Unknown query field: ghost_field.');
+
+      expect(repository.findCurrent).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unsupported operator without touching the store', async () => {
+      await expect(
+        service.query({ where: { field: 'project_id', op: 'regex', value: '.*' } }),
+      ).rejects.toThrow('Unsupported operator: regex.');
+
+      expect(repository.findCurrent).not.toHaveBeenCalled();
+    });
+
+    it('rejects an over-nested query before any data is read', async () => {
+      const overDeep = Array.from({ length: 11 }).reduce<Record<string, unknown>>(
+        (inner) => ({ not: inner }),
+        { field: 'project_id', op: 'eq', value: 1 },
+      );
+
+      const rejection = service.query({ where: overDeep });
+
+      await expect(rejection).rejects.toBeInstanceOf(VariantValidationError);
+      await expect(rejection).rejects.toMatchObject({
+        code: VariantErrorCode.QUERY_TOO_COMPLEX,
+      });
+      expect(repository.findCurrent).not.toHaveBeenCalled();
+    });
   });
 });

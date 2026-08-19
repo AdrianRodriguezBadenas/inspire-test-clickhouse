@@ -1,201 +1,342 @@
-import { Condition, QueryValidationError } from '../domain/variant-query';
-import { translateOrderBy, translateWhere } from './variant-query.translator';
+import { translateVariantQuery } from './variant-query.translator';
+import { SortDirection, VariantOperator } from '../domain/variant-query';
+import type { ValidatedCondition, ValidatedQuery } from '../domain/variant-query.validation';
 
-describe('translateWhere', () => {
-  it('returns an empty fragment for no condition', () => {
-    // WHEN
-    const result = translateWhere(undefined);
+const leaf = (
+  field: string,
+  op: VariantOperator,
+  value: unknown = null,
+): ValidatedCondition => ({ kind: 'leaf', field: field as never, op, value });
 
-    // THEN
-    expect(result).toEqual({ sql: '', params: {} });
-  });
-
-  it('translates a scalar equality to a parameterized predicate', () => {
-    // WHEN
-    const result = translateWhere({ field: 'gene_symbol', op: 'eq', value: 'BRCA1' });
-
-    // THEN
-    expect(result.sql).toBe('`gene_symbol` = {p0:String}');
-    expect(result.params).toEqual({ p0: 'BRCA1' });
-  });
-
-  it('binds numeric comparisons with the field type', () => {
-    // WHEN
-    const result = translateWhere({ field: 'score', op: 'gte', value: 0.9 });
-
-    // THEN
-    expect(result.sql).toBe('`score` >= {p0:Float64}');
-    expect(result.params).toEqual({ p0: 0.9 });
-  });
-
-  it('translates IN to an array parameter', () => {
-    // WHEN
-    const result = translateWhere({
-      field: 'clin_acmg',
-      op: 'in',
-      value: ['Pathogenic', 'Likely pathogenic'],
-    });
-
-    // THEN
-    expect(result.sql).toBe('`clin_acmg` IN {p0:Array(String)}');
-    expect(result.params).toEqual({ p0: ['Pathogenic', 'Likely pathogenic'] });
-  });
-
-  it('nests and/or with incrementing parameter names', () => {
-    // WHEN
-    const result = translateWhere({
-      and: [
-        { field: 'project_id', op: 'eq', value: 42 },
-        {
-          or: [
-            { field: 'score', op: 'gte', value: 0.9 },
-            { field: 'gene_symbol', op: 'eq', value: 'TP53' },
-          ],
-        },
-      ],
-    });
-
-    // THEN
-    expect(result.sql).toBe(
-      '(`project_id` = {p0:UInt64} AND (`score` >= {p1:Float64} OR `gene_symbol` = {p2:String}))',
-    );
-    expect(result.params).toEqual({ p0: 42, p1: 0.9, p2: 'TP53' });
-  });
-
-  it('uses has() for equality on an array field', () => {
-    // WHEN
-    const result = translateWhere({ field: 'hpo', op: 'eq', value: 'HP:0001' });
-
-    // THEN
-    expect(result.sql).toBe('has(`hpo`, {p0:String})');
-    expect(result.params).toEqual({ p0: 'HP:0001' });
-  });
-
-  it('rejects an unknown field', () => {
-    // WHEN / THEN
-    expect(() => translateWhere({ field: 'evil; DROP TABLE', op: 'eq', value: 1 })).toThrow(
-      QueryValidationError,
-    );
-    try {
-      translateWhere({ field: 'nope', op: 'eq', value: 1 });
-    } catch (error) {
-      expect((error as QueryValidationError).code).toBe('unknown_query_field');
-    }
-  });
-
-  it('rejects an unknown operator', () => {
-    // WHEN / THEN
-    try {
-      translateWhere({ field: 'score', op: 'regex' as never, value: 1 });
-      fail('expected a QueryValidationError');
-    } catch (error) {
-      expect((error as QueryValidationError).code).toBe('unknown_query_operator');
-    }
-  });
-
-  it('rejects a comparison operator on an array field', () => {
-    // WHEN / THEN
-    try {
-      translateWhere({ field: 'hpo', op: 'gt', value: 'x' });
-      fail('expected a QueryValidationError');
-    } catch (error) {
-      expect((error as QueryValidationError).code).toBe('invalid_query');
-    }
-  });
-
-  it('rejects like on a non-string field', () => {
-    // WHEN / THEN
-    try {
-      translateWhere({ field: 'score', op: 'like', value: '%x%' });
-      fail('expected a QueryValidationError');
-    } catch (error) {
-      expect((error as QueryValidationError).code).toBe('invalid_query');
-    }
-  });
+const aQuery = (overrides: Partial<ValidatedQuery> = {}): ValidatedQuery => ({
+  where: null,
+  order_by: [],
+  limit: 50,
+  offset: 0,
+  ...overrides,
 });
 
-describe('translateWhere with class-instance conditions', () => {
-  // A GraphQL input arrives as a class instance carrying every declared property,
-  // `undefined` where the client omitted it. Node-type discrimination must look at
-  // the value, not at key presence, or a leaf reads as an `and` node — which broke
-  // REST/GraphQL parity.
-  class ConditionInstance {
-    and?: unknown;
-    or?: unknown;
-    not?: unknown;
-    field?: string;
-    op?: string;
-    value?: unknown;
+/** Collapse whitespace so assertions read as one line. */
+const flat = (sql: string): string => sql.replace(/\s+/g, ' ').trim();
 
-    constructor(fields: Partial<ConditionInstance>) {
-      Object.assign(this, fields);
-    }
-  }
+describe('translateVariantQuery', () => {
+  describe('current-version projection', () => {
+    it('dedups to the current version per natural key before applying conditions', () => {
+      const translated = translateVariantQuery(aQuery(), 'variant');
 
-  it('treats an instance with undefined and/or/not as a leaf', () => {
-    // GIVEN
-    const where = new ConditionInstance({
-      field: 'collection',
-      op: 'eq',
-      value: 'col-a',
+      expect(flat(translated.sql)).toContain(
+        'FROM variant ORDER BY version_date DESC LIMIT 1 BY project_id, collection, uri',
+      );
     });
 
-    // WHEN
-    const { sql, params } = translateWhere(where as unknown as Condition);
+    it('applies client conditions outside the dedup, so only current rows can match', () => {
+      const translated = translateVariantQuery(
+        aQuery({ where: leaf('score', VariantOperator.GT, 0.5) }),
+        'variant',
+      );
 
-    // THEN
-    expect(sql).toBe('`collection` = {p0:String}');
-    expect(params).toEqual({ p0: 'col-a' });
-  });
+      const [inner, outer] = flat(translated.sql).split('LIMIT 1 BY project_id, collection, uri');
 
-  it('treats an instance with a populated `and` as a boolean node', () => {
-    // GIVEN
-    const where = new ConditionInstance({
-      and: [
-        new ConditionInstance({ field: 'project_id', op: 'eq', value: 42 }),
-        new ConditionInstance({ field: 'collection', op: 'eq', value: 'col-a' }),
-      ],
+      expect(inner).not.toContain('score');
+      expect(outer).toContain('score > {p0:Float64}');
     });
 
-    // WHEN
-    const { sql, params } = translateWhere(where as unknown as Condition);
+    it('pages with the requested size and offset', () => {
+      const translated = translateVariantQuery(aQuery({ limit: 25, offset: 75 }), 'variant');
 
-    // THEN
-    expect(sql).toBe('(`project_id` = {p0:UInt64} AND `collection` = {p1:String})');
-    expect(params).toEqual({ p0: 42, p1: 'col-a' });
-  });
-
-  it('treats an instance with a populated `not` as a negation', () => {
-    // GIVEN
-    const where = new ConditionInstance({
-      not: new ConditionInstance({ field: 'score', op: 'gte', value: 15 }),
+      expect(flat(translated.sql)).toContain('LIMIT 26 OFFSET 75');
     });
 
-    // WHEN
-    const { sql, params } = translateWhere(where as unknown as Condition);
+    it('orders by the natural key so paging is deterministic without client ordering', () => {
+      const translated = translateVariantQuery(aQuery(), 'variant');
 
-    // THEN
-    expect(sql).toBe('(NOT `score` >= {p0:Float64})');
-    expect(params).toEqual({ p0: 15 });
-  });
-});
+      expect(flat(translated.sql)).toContain('ORDER BY project_id ASC, collection ASC, uri ASC');
+    });
 
-describe('translateOrderBy', () => {
-  it('translates validated fields to a safe ORDER BY', () => {
-    // WHEN
-    const sql = translateOrderBy([
-      { field: 'pos_position', dir: 'asc' },
-      { field: 'score', dir: 'desc' },
-    ]);
+    it('appends the natural key after the client ordering as a tie-break', () => {
+      const translated = translateVariantQuery(
+        aQuery({ order_by: [{ field: 'score', dir: SortDirection.DESC }] }),
+        'variant',
+      );
 
-    // THEN
-    expect(sql).toBe('`pos_position` ASC, `score` DESC');
+      expect(flat(translated.sql)).toContain(
+        'ORDER BY score DESC, project_id ASC, collection ASC, uri ASC',
+      );
+    });
   });
 
-  it('rejects an unknown sort field', () => {
-    // WHEN / THEN
-    expect(() => translateOrderBy([{ field: 'bogus', dir: 'asc' }])).toThrow(
-      QueryValidationError,
-    );
+  describe('natural-key push-down', () => {
+    it('pushes a natural-key condition into the dedup so the scan prunes', () => {
+      const translated = translateVariantQuery(
+        aQuery({ where: leaf('project_id', VariantOperator.EQ, 7) }),
+        'variant',
+      );
+
+      const [inner] = flat(translated.sql).split('LIMIT 1 BY');
+
+      expect(inner).toContain('WHERE project_id = {p0:UInt64}');
+    });
+
+    it('re-applies the pushed condition outside as well, binding the parameter once', () => {
+      const translated = translateVariantQuery(
+        aQuery({ where: leaf('project_id', VariantOperator.EQ, 7) }),
+        'variant',
+      );
+
+      const sql = flat(translated.sql);
+
+      expect(sql.match(/project_id = \{p0:UInt64\}/g)).toHaveLength(2);
+      expect(translated.params).toEqual({ p0: 7 });
+    });
+
+    it('pushes each natural-key branch of a top-level conjunction', () => {
+      const translated = translateVariantQuery(
+        aQuery({
+          where: {
+            kind: 'and',
+            children: [
+              leaf('project_id', VariantOperator.EQ, 7),
+              leaf('collection', VariantOperator.EQ, 'study-1'),
+              leaf('score', VariantOperator.GT, 0.5),
+            ],
+          },
+        }),
+        'variant',
+      );
+
+      const [inner] = flat(translated.sql).split('LIMIT 1 BY');
+
+      expect(inner).toContain('WHERE (project_id = {p0:UInt64}) AND (collection = {p1:String})');
+      expect(inner).not.toContain('score');
+    });
+
+    it('never pushes a condition from inside a disjunction', () => {
+      const translated = translateVariantQuery(
+        aQuery({
+          where: {
+            kind: 'or',
+            children: [
+              leaf('project_id', VariantOperator.EQ, 7),
+              leaf('project_id', VariantOperator.EQ, 8),
+            ],
+          },
+        }),
+        'variant',
+      );
+
+      const [inner] = flat(translated.sql).split('LIMIT 1 BY');
+
+      expect(inner).not.toContain('WHERE');
+    });
+
+    it('never pushes a condition from inside a negation', () => {
+      const translated = translateVariantQuery(
+        aQuery({ where: { kind: 'not', child: leaf('project_id', VariantOperator.EQ, 7) } }),
+        'variant',
+      );
+
+      const [inner] = flat(translated.sql).split('LIMIT 1 BY');
+
+      expect(inner).not.toContain('WHERE');
+    });
+
+    it('does not push a condition on a non-key field', () => {
+      const translated = translateVariantQuery(
+        aQuery({ where: leaf('gene_symbol', VariantOperator.EQ, 'BRCA1') }),
+        'variant',
+      );
+
+      const [inner] = flat(translated.sql).split('LIMIT 1 BY');
+
+      expect(inner).not.toContain('WHERE');
+    });
+  });
+
+  describe('operators', () => {
+    it.each([
+      [VariantOperator.EQ, 'score = {p0:Float64}', 0.5],
+      [VariantOperator.NE, 'score != {p0:Float64}', 0.5],
+      [VariantOperator.LT, 'score < {p0:Float64}', 0.5],
+      [VariantOperator.LTE, 'score <= {p0:Float64}', 0.5],
+      [VariantOperator.GT, 'score > {p0:Float64}', 0.5],
+      [VariantOperator.GTE, 'score >= {p0:Float64}', 0.5],
+    ])('translates %s to a bound comparison', (op, expected, value) => {
+      const translated = translateVariantQuery(aQuery({ where: leaf('score', op, value) }), 'variant');
+
+      expect(flat(translated.sql)).toContain(expected);
+      expect(translated.params).toEqual({ p0: value });
+    });
+
+    it('translates in to a bound array membership test', () => {
+      const translated = translateVariantQuery(
+        aQuery({ where: leaf('project_id', VariantOperator.IN, [1, 2]) }),
+        'variant',
+      );
+
+      expect(flat(translated.sql)).toContain('project_id IN {p0:Array(UInt64)}');
+      expect(translated.params).toEqual({ p0: [1, 2] });
+    });
+
+    it('translates nin to a negated array membership test', () => {
+      const translated = translateVariantQuery(
+        aQuery({ where: leaf('uri', VariantOperator.NIN, ['a', 'b']) }),
+        'variant',
+      );
+
+      expect(flat(translated.sql)).toContain('uri NOT IN {p0:Array(String)}');
+    });
+
+    it('translates like to a bound pattern match', () => {
+      const translated = translateVariantQuery(
+        aQuery({ where: leaf('uri', VariantOperator.LIKE, 'chr1:%') }),
+        'variant',
+      );
+
+      expect(flat(translated.sql)).toContain('uri LIKE {p0:String}');
+      expect(translated.params).toEqual({ p0: 'chr1:%' });
+    });
+
+    it('translates ilike to a case-insensitive bound pattern match', () => {
+      const translated = translateVariantQuery(
+        aQuery({ where: leaf('collection', VariantOperator.ILIKE, 'Study%') }),
+        'variant',
+      );
+
+      expect(flat(translated.sql)).toContain('collection ILIKE {p0:String}');
+    });
+
+    it('translates between to two bound parameters', () => {
+      const translated = translateVariantQuery(
+        aQuery({ where: leaf('score', VariantOperator.BETWEEN, [0.1, 0.9]) }),
+        'variant',
+      );
+
+      expect(flat(translated.sql)).toContain('score BETWEEN {p0:Float64} AND {p1:Float64}');
+      expect(translated.params).toEqual({ p0: 0.1, p1: 0.9 });
+    });
+
+    it('translates is_null without binding a parameter', () => {
+      const translated = translateVariantQuery(
+        aQuery({ where: leaf('score', VariantOperator.IS_NULL) }),
+        'variant',
+      );
+
+      expect(flat(translated.sql)).toContain('score IS NULL');
+      expect(translated.params).toEqual({});
+    });
+
+    it('translates is_not_null without binding a parameter', () => {
+      const translated = translateVariantQuery(
+        aQuery({ where: leaf('score', VariantOperator.IS_NOT_NULL) }),
+        'variant',
+      );
+
+      expect(flat(translated.sql)).toContain('score IS NOT NULL');
+      expect(translated.params).toEqual({});
+    });
+
+    it('binds an array-column condition against the element type', () => {
+      const translated = translateVariantQuery(
+        aQuery({ where: leaf('hpo', VariantOperator.EQ, 'HP:0001250') }),
+        'variant',
+      );
+
+      expect(flat(translated.sql)).toContain('has(hpo, {p0:String})');
+    });
+
+    it('binds a timestamp value as a UTC ClickHouse literal', () => {
+      const translated = translateVariantQuery(
+        aQuery({
+          where: leaf('version_date', VariantOperator.GTE, new Date('2026-07-28T09:15:42.123Z')),
+        }),
+        'variant',
+      );
+
+      expect(flat(translated.sql)).toContain('version_date >= {p0:DateTime64(3)}');
+      expect(translated.params).toEqual({ p0: '2026-07-28 09:15:42.123' });
+    });
+  });
+
+  describe('combinators', () => {
+    it('translates a conjunction', () => {
+      const translated = translateVariantQuery(
+        aQuery({
+          where: {
+            kind: 'and',
+            children: [leaf('score', VariantOperator.GT, 1), leaf('uri', VariantOperator.EQ, 'x')],
+          },
+        }),
+        'variant',
+      );
+
+      expect(flat(translated.sql)).toContain('(score > {p0:Float64}) AND (uri = {p1:String})');
+    });
+
+    it('translates a disjunction', () => {
+      const translated = translateVariantQuery(
+        aQuery({
+          where: {
+            kind: 'or',
+            children: [leaf('score', VariantOperator.GT, 1), leaf('uri', VariantOperator.EQ, 'x')],
+          },
+        }),
+        'variant',
+      );
+
+      expect(flat(translated.sql)).toContain('(score > {p0:Float64}) OR (uri = {p1:String})');
+    });
+
+    it('translates a negation', () => {
+      const translated = translateVariantQuery(
+        aQuery({ where: { kind: 'not', child: leaf('score', VariantOperator.GT, 1) } }),
+        'variant',
+      );
+
+      expect(flat(translated.sql)).toContain('NOT (score > {p0:Float64})');
+    });
+
+    it('numbers parameters across a nested tree without collision', () => {
+      const translated = translateVariantQuery(
+        aQuery({
+          where: {
+            kind: 'and',
+            children: [
+              leaf('score', VariantOperator.GT, 1),
+              {
+                kind: 'or',
+                children: [
+                  leaf('uri', VariantOperator.EQ, 'x'),
+                  leaf('collection', VariantOperator.EQ, 'y'),
+                ],
+              },
+            ],
+          },
+        }),
+        'variant',
+      );
+
+      expect(translated.params).toEqual({ p0: 1, p1: 'x', p2: 'y' });
+    });
+  });
+
+  describe('injection safety', () => {
+    it('never inlines a value into the statement', () => {
+      const translated = translateVariantQuery(
+        aQuery({ where: leaf('uri', VariantOperator.EQ, "x'; DROP TABLE variant; --") }),
+        'variant',
+      );
+
+      expect(translated.sql).not.toContain('DROP TABLE');
+      expect(translated.params).toEqual({ p0: "x'; DROP TABLE variant; --" });
+    });
+
+    it('never inlines a pattern into the statement', () => {
+      const translated = translateVariantQuery(
+        aQuery({ where: leaf('collection', VariantOperator.ILIKE, "%' OR 1=1 --") }),
+        'variant',
+      );
+
+      expect(translated.sql).not.toContain('OR 1=1');
+    });
   });
 });

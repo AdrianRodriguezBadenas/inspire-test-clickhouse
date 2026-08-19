@@ -1,6 +1,0 @@
-{
-  "exit": 1,
-  "findings": [
-    { "rule": "sections-present", "message_substring": "action descriptor missing required section" }
-  ]
-}

@@ -2,6 +2,64 @@
 kind: inspire-code-profile
 id: nestjs
 layer: backend
+
+# The machine-checkable half of `## Quality gates` below, verified by
+# `.inspire/bin/profile-gates-installed.sh`. The prose says WHY; this says WHAT MUST BE
+# TRUE, and the two are separate on purpose: the prose deliberately names rules this stack
+# **rejects** (`complexity`), so a validator scraping it would demand the very thing the
+# reasoning refuses.
+#
+# `literal` is grepped verbatim — no globbing, no regex — against `config`, resolved
+# relative to the project's source root. `expect: absent` inverts it, which is how a
+# deliberate non-adoption stays deliberate instead of drifting back in unnoticed.
+gates:
+  - literal: strictTypeChecked
+    config: eslint.config.mjs
+  - literal: ban-ts-comment
+    config: eslint.config.mjs
+  - literal: max-depth
+    config: eslint.config.mjs
+  - literal: max-lines-per-function
+    config: eslint.config.mjs
+  - literal: import-x/no-cycle
+    config: eslint.config.mjs
+  - literal: import-x/no-restricted-paths
+    config: eslint.config.mjs
+  # The resolver is a gate in its own right, not plumbing: without it the two rules above
+  # resolve nothing and silently pass on everything. Measured at 77 of 77 imports.
+  - literal: import-x/resolver-next
+    config: eslint.config.mjs
+  - literal: jest/expect-expect
+    config: eslint.config.mjs
+  - literal: jest/no-disabled-tests
+    config: eslint.config.mjs
+  - literal: jest/no-focused-tests
+    config: eslint.config.mjs
+  - literal: jest/no-conditional-expect
+    config: eslint.config.mjs
+  # Neither is in the plugin's `recommended` preset, so both must be enabled by name.
+  - literal: eslint-comments/require-description
+    config: eslint.config.mjs
+  - literal: eslint-comments/no-unused-disable
+    config: eslint.config.mjs
+  - literal: coverageThreshold
+    config: package.json
+  # The lint half of CLAUDE.md rule 2. Declared here so removing the rule is caught, since
+  # the drill that would otherwise notice runs per-diff and only when someone remembers.
+  # The ACTIVATION line, severity included — not the bare rule name, which also appears in
+  # the rule's own definition and comment, so grepping for it would pass even with the rule
+  # switched off. This is the "present but off" limitation the validator's header warns
+  # about, dodged by declaring a literal that only the active form can satisfy.
+  - literal: "'local/no-numeric-constant-from-unit-under-test': 'error'"
+    config: eslint.config.mjs
+  # Rejected on measured evidence — see `## Quality gates`. Re-adopting it is a decision,
+  # so it must come with an edit here rather than arrive quietly.
+  - literal: "'complexity'"
+    config: eslint.config.mjs
+    expect: absent
+  - literal: recommendedTypeChecked
+    config: eslint.config.mjs
+    expect: absent
 ---
 
 ## Layering
@@ -18,9 +76,12 @@ logic never lives in a controller.
 - **Unit** (`*.spec.ts`) — services with their dependencies mocked (a typed
   auto-mock helper, not hand-rolled objects); assert the returned value **and** each
   collaborator call.
-- **E2E** (`*.e2e-spec.ts`) — controllers and DB repositories against a **real
-  database**; mock only outbound external HTTP (intercept and assert the request was
-  made). E2E never overrides providers.
+- **E2E** (`*.e2e-spec.ts`) — **written first**, from the acceptance criteria: they
+  describe what a caller observes, which is this level. Controllers and DB repositories
+  against a **real database**; mock only what sits outside the boundary and assert what
+  crossed it — the outbound HTTP request that was made (intercept and assert URL, method
+  and body), and the full payload plus topic/key of every event published. E2E never
+  overrides providers.
 - HTTP repositories (call an API, not a DB) are unit-tested — the contract is the
   parsing/mapping, not the transport.
 - GIVEN/WHEN/THEN; use test-data builders so each test sets only the significant
@@ -46,6 +107,135 @@ logic never lives in a controller.
   authorization (not only authentication), input validation, no sensitive data in
   logs or error responses.
 
+## Quality gates
+**Absolute** (eslint — the agent hits these in its own loop and fixes them before
+anything reaches the operator):
+- `typescript-eslint` **`strictTypeChecked`**, not `recommendedTypeChecked` — it
+  brings `no-non-null-assertion` and the stricter `any` rules with it.
+- `max-depth` · `max-lines-per-function` · `max-lines`. Two caveats measured rather than
+  assumed, both about the rule fitting the file kind: `max-lines-per-function` fires on
+  every `describe` block, since a suite callback is a function to the linter — off for
+  test files, with the reason written. `max-lines` fires on field-declaration files (a
+  DTO with 300 property decorators is wide, not complex) — off for `dto/` and generated
+  type modules, in force everywhere else.
+- **`complexity` is deliberately NOT adopted** (Rule 2's third branch). Measured on a real
+  codebase it produced two hits and both were false positives: a `switch` dispatching 12
+  query operators to one-line cases scores 15 cyclomatic while being trivially readable.
+  Cyclomatic complexity counts branches, and a dispatch table is all branches and no
+  complexity; splitting one to satisfy the rule makes the code worse. Adopt a *cognitive*
+  complexity rule instead if the need is real.
+- `eslint-plugin-import-x` (**not** `eslint-plugin-import`, which declares peer support
+  only through eslint 9): `import-x/no-cycle`, plus `import-x/no-restricted-paths` to make
+  the four-layer boundary above a build error instead of a review comment
+  (controllers → application → infrastructure → domain; `domain/` imports nothing).
+  Two things this rule needs, both of which produce a **silently passing** rule when
+  missing, and both measured rather than assumed:
+  - **A TypeScript resolver** (`eslint-import-resolver-typescript`, wired through
+    `settings['import-x/resolver-next']`). Without one, not a single relative `.ts` import
+    resolves and every zone check is skipped — the rule reports nothing, for ever.
+  - **Zones derived from the modules on disk**, not globbed and not written per module.
+    `target: './src/*/domain'` matches nothing; hard-coding one module's paths works until
+    the second module is added and escapes the boundary unnoticed. Generate them from the
+    layer ordering and `readdirSync('./src')`, and throw if the derivation yields none —
+    a boundary rule with zero zones passes on everything.
+- `eslint-plugin-jest`: `expect-expect` (a test that asserts nothing — the
+  characteristic failure of generated tests) · `no-disabled-tests` ·
+  `no-focused-tests` · `no-conditional-expect`.
+- **A local rule: a test may not import a *numeric* constant from the code it tests.**
+  This is the lint half of "never build the expected value from the code under test": a
+  threshold imported into a test makes the test move with the code, so changing
+  `MAX_CONDITION_DEPTH` from 10 to 11 leaves the suite green while an observable limit
+  changed. Measured — that mutation survived nine tests in the file that owned it.
+  Scoped to **numbers**, decided by the type checker rather than by naming, and the
+  distinction is the whole reason it has no false positives: a number is a threshold whose
+  value a caller observes, so a test must state it as a literal; a string / object / array
+  constant is usually a registry or schema (the field list a DDL is generated from), where
+  deriving is the point and hard-coding forty names would duplicate the source of truth.
+  Lives inline in `eslint.config.mjs` — a rule this project-shaped does not need a package.
+
+  Why lint and not the drill: the drill finds a weak test after the fact and only when
+  someone runs it, and it **cannot tell a weak test from a shortcut fix to one** — pinning
+  `expect(MAX_CONDITION_DEPTH).toBe(10)` satisfies the drill while testing no behaviour at
+  all. Lint refuses it at the moment of writing.
+
+**Ratcheted** (aggregates; baseline kept outside the repo per Rule 3):
+- **coverage** — `npm run test -- --coverage`; jest's `coverageThreshold` is the in-repo
+  floor, the history lives in the metrics service. Set the floor to **what is measured
+  today**, per metric, and raise it as work lands: the absolute value carries no claim,
+  the direction does.
+  Read the number honestly, because two things distort it. `collectCoverageFrom` counts
+  declaration-heavy files (a DTO with 288 field decorators, generated GraphQL types), which
+  drags statements down without any behaviour going unchecked; and the **e2e suite runs
+  under its own jest config, so it contributes nothing to this number** — which is where
+  most acceptance criteria are actually covered. A low statements floor beside a high
+  branch floor is the expected shape, not a defect to explain away.
+
+**Dropped, with the reason** (Rule 2's third branch — a rule that does not hold here
+is written down, never silently missing):
+- **mutation score as a ratcheted metric.** Coverage proves a line ran, not that a
+  test would fail if its behavior changed — so the gap is real. It is closed per-diff
+  by the **mutation drill** ([`../references/tdd.md`](../references/tdd.md), step 6)
+  with the agent as the mutation engine, not by a repo-wide score. Consequence, stated
+  plainly: there is **no aggregate number** for test strength in this stack, and the
+  drill is bounded to changed files — code that predates the drill is not covered by
+  it. What buys the trade is that a diff-scoped drill needs no tool to own, no baseline
+  to store, and no CI budget to defend.
+- **Property-based testing** (`fast-check`) is the complement for `domain/` — pure
+  types and rules with invariants. It tests the code with varied inputs; the drill
+  tests the tests. Neither replaces the other.
+
+**Escape hatches** (Rule 4 — named, justified, counted):
+- `@typescript-eslint/ban-ts-comment` at `allow-with-description` — `@ts-expect-error`
+  permitted with a reason, `@ts-ignore` never (expect-error expires by itself when the
+  underlying error is fixed).
+- `@eslint-community/eslint-plugin-eslint-comments`: `require-description` ·
+  `no-unlimited-disable` · `no-unused-disable` — a suppression must name its rule and
+  say why, and a stale one is an error rather than a fossil.
+  **Its `recommended` preset is not enough**, measured: that preset enables five rules
+  (`disable-enable-pair`, `no-aggregating-enable`, `no-duplicate-disable`,
+  `no-unlimited-disable`, `no-unused-enable`) and **neither `require-description` nor
+  `no-unused-disable` is among them**. Enabling the preset alone leaves the promise above
+  unenforced while looking installed — turn both on explicitly.
+- The repo-wide count of suppressions plus `as any` / `as unknown as` / `x!` is
+  **ratcheted in-repo** — the one baseline Rule 3 allows inside the repository, because a
+  suppression is source text and the ceiling bump shows up in the same diff. Patterns and
+  ceilings go in `.escape-hatches.json`; enforced by `.inspire/bin/escape-hatch-ratchet.sh`
+  from `pre-commit`.
+
+Test-file relaxations are enumerated **per rule with a written reason**. Two legitimate
+cases, and they are different in kind:
+
+- **Untyped response boundaries** — HTTP/GraphQL payloads the types cannot prove. Debt:
+  it shrinks as the boundary gets modelled.
+- **Negative-path construction** — a test that feeds the wrong type to a validator
+  (`null as unknown as string`) needs a cast, because the type system preventing it is
+  the whole point of the code under test. **Structural, not debt**: its ratchet ceiling
+  should hold, not drain, and the config should say so — a ceiling that invites a cleanup
+  which cannot happen trains people to ignore it.
+
+Never a blanket disable of the correctness rules for `**/*.spec.ts`.
+
 ## Build & verify
 build: `npm run build` · lint: `npm run lint` · types: `npx tsc --noEmit` ·
 tests: `npm run test` + `npm run test:e2e`
+
+**Monorepo scoping.** In a workspace, scope every command to the target surface's
+package: `pnpm --filter {package} build|lint|test` (or the workspace tool's
+equivalent — `npm -w {package} …`, `turbo run test --filter={package}`, `nx test
+{package}`). Never run a workspace-wide install or build from a subcommand when a
+filtered form exists. E2E still runs against a real database — filter which package's
+suite runs, never what it runs against.
+
+**Test infrastructure — check before the first red test** (the precondition in
+[`../references/tdd.md`](../references/tdd.md)). The components come from `stack.md`'s
+`## Test infrastructure`; the compose file realizes them:
+
+- Inspect: `docker compose config --services` — every declared component has a service.
+- Status: `docker compose ps` — a service must be **healthy**, not merely `Up`. Compose
+  services carrying a healthcheck report both, and `Up` is where a flaky e2e suite comes
+  from: the container exists, the server is still opening its ports.
+- **Ask the operator to run** `docker compose up -d` (or `--wait`, which blocks until
+  healthchecks pass). Do not start it silently — they may have it up on other ports or
+  pointed at a shared instance.
+- Then run `npm run test:e2e` once. A connection error is **not** red; it is a suite that
+  never ran.

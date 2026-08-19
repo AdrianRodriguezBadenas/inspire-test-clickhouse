@@ -1,22 +1,22 @@
+/**
+ * The analytics module — the variant store.
+ *
+ * Both access routes (the REST controller and the GraphQL resolver) sit on the one
+ * service, which is what adr-graphql-query-transport requires of them.
+ */
+
 import { Module } from '@nestjs/common';
 import { VariantService } from './application/variant.service';
+import { ClickHouseConnection } from './infrastructure/clickhouse.provider';
+import { VariantRepository } from './infrastructure/variant.repository';
 import { VariantController } from './controllers/variant.controller';
 import { VariantResolver } from './controllers/variant.resolver';
-import { clickhouseProvider } from './infrastructure/clickhouse.provider';
-import { VariantRepository } from './infrastructure/variant.repository';
 
-/**
- * The controller and the resolver are two access routes onto one service — REST
- * (with its Swagger surface) and read-only GraphQL. See
- * .inspire_kb/01_adr/adr-graphql-query-transport.md.
- */
 @Module({
   controllers: [VariantController],
-  providers: [
-    VariantService,
-    VariantRepository,
-    clickhouseProvider,
-    VariantResolver,
-  ],
+  providers: [VariantService, VariantRepository, ClickHouseConnection, VariantResolver],
+  // ClickHouseConnection is exported so the readiness probe can ask THE connection the
+  // product uses. A second client would let the probe pass while the real one is broken.
+  exports: [VariantService, VariantRepository, ClickHouseConnection],
 })
 export class AnalyticsModule {}

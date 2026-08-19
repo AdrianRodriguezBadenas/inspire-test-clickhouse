@@ -1,246 +1,351 @@
-import { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
-import { ClickHouseClient, createClient } from '@clickhouse/client';
-import { readFileSync } from 'fs';
-import { join } from 'path';
+/**
+ * ANL-01 (insert) and ANL-02 (query) against a real ClickHouse: the acceptance criteria
+ * that only a real store can prove — append-only writes, out-of-order version
+ * resolution, current-only reads, and paging.
+ */
+
 import request from 'supertest';
-import { AppModule } from '../src/app.module';
-import { configureApp } from '../src/app.setup';
-
-const CLICKHOUSE_URL = process.env.CLICKHOUSE_URL ?? 'http://localhost:8123';
-
-const validPayload = (overrides: Record<string, unknown> = {}) => ({
-  project_id: 42,
-  uri: 'urn:variant:1',
-  origin: 'GERMLINE',
-  type: 'SNV/INDEL',
-  collection: 'col-a',
-  version_date: '2024-01-01T00:00:00.000Z',
-  ...overrides,
-});
-
-const byKey = (uri: string, collection = 'col-a') => ({
-  where: {
-    and: [
-      { field: 'project_id', op: 'eq', value: 42 },
-      { field: 'collection', op: 'eq', value: collection },
-      { field: 'uri', op: 'eq', value: uri },
-    ],
-  },
-});
+import type { Server } from 'node:http';
+import { aVariantBody, bootstrapVariantStore, type VariantStore } from './variant-store';
 
 describe('Variants (e2e)', () => {
-  let app: INestApplication;
-  let ch: ClickHouseClient;
+  let store: VariantStore;
+  let server: Server;
 
   beforeAll(async () => {
-    ch = createClient({ url: CLICKHOUSE_URL });
-    await ch.command({ query: 'DROP TABLE IF EXISTS variants' });
-    const schema = readFileSync(join(__dirname, '../db/schema.sql'), 'utf8');
-    await ch.command({ query: schema });
-
-    const moduleRef = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleRef.createNestApplication();
-    configureApp(app);
-    await app.init();
+    store = await bootstrapVariantStore();
+    server = store.app.getHttpServer() as Server;
   });
 
   afterAll(async () => {
-    await ch.close();
-    await app.close();
+    await store.close();
   });
 
   beforeEach(async () => {
-    await ch.command({ query: 'TRUNCATE TABLE variants' });
+    await store.clear();
   });
 
-  const insert = async (overrides: Record<string, unknown> = {}): Promise<string> => {
-    const response = await request(app.getHttpServer())
-      .post('/variants')
-      .send(validPayload(overrides))
-      .expect(201);
-    return response.body.id as string;
-  };
+  const insert = (body: Record<string, unknown>) =>
+    request(server).post('/variants').send(body);
 
-  const query = (body: Record<string, unknown>) =>
-    request(app.getHttpServer()).post('/variants/query').send(body);
+  const query = (body: Record<string, unknown> = {}) =>
+    request(server).post('/variants/query').send(body);
 
-  // ---- create (ANL-01) ----
+  describe('insert', () => {
+    /** @covers ANL-01-1 */
+    it('stores a valid record and confirms it with the stored id', async () => {
+      const response = await insert(aVariantBody());
 
-  it('stores a valid variant and returns its id', async () => {
-    // WHEN
-    const response = await request(app.getHttpServer())
-      .post('/variants')
-      .send(validPayload());
-
-    // THEN
-    expect(response.status).toBe(201);
-    expect(response.body).toEqual({ id: expect.any(String) });
-  });
-
-  it('rejects an insert missing a required field', async () => {
-    // GIVEN
-    const payload = validPayload();
-    delete (payload as { project_id?: number }).project_id;
-
-    // WHEN
-    const response = await request(app.getHttpServer())
-      .post('/variants')
-      .send(payload);
-
-    // THEN
-    expect(response.status).toBe(400);
-    expect(response.body.code).toBe('missing_required_field');
-    expect(response.body.fields).toContain('project_id');
-  });
-
-  it('rejects an insert missing version_date', async () => {
-    // GIVEN
-    const payload = validPayload();
-    delete (payload as { version_date?: string }).version_date;
-
-    // WHEN
-    const response = await request(app.getHttpServer())
-      .post('/variants')
-      .send(payload);
-
-    // THEN
-    expect(response.status).toBe(400);
-    expect(response.body.fields).toContain('version_date');
-  });
-
-  it('rejects an insert with an invalid enum value', async () => {
-    // WHEN
-    const response = await request(app.getHttpServer())
-      .post('/variants')
-      .send(validPayload({ origin: 'BOGUS' }));
-
-    // THEN
-    expect(response.status).toBe(400);
-    expect(response.body.code).toBe('invalid_enum_value');
-    expect(response.body.fields).toContain('origin');
-  });
-
-  it('rejects an insert that supplies created_at', async () => {
-    // WHEN
-    const response = await request(app.getHttpServer())
-      .post('/variants')
-      .send(validPayload({ created_at: '2020-01-01T00:00:00.000Z' }));
-
-    // THEN
-    expect(response.status).toBe(400);
-    expect(response.body.fields).toContain('created_at');
-  });
-
-  // ---- query (ANL-02) ----
-
-  it('keeps the greatest version_date as current, even when the older one arrives last', async () => {
-    // GIVEN — the NEWER version first, then a stale OLDER one.
-    await insert({ version_date: '2024-06-01T00:00:00.000Z', score: 20 });
-    await insert({ version_date: '2023-01-01T00:00:00.000Z', score: 10 });
-
-    // WHEN
-    const response = await query(byKey('urn:variant:1'));
-
-    // THEN
-    expect(response.status).toBe(200);
-    expect(response.body.items).toHaveLength(1);
-    expect(response.body.items[0].score).toBe(20);
-  });
-
-  it('queries current variants matching a structured condition', async () => {
-    // GIVEN
-    await insert({ uri: 'urn:a', collection: 'col-a' });
-    await insert({ uri: 'urn:b', collection: 'col-b' });
-
-    // WHEN
-    const response = await query({
-      where: { field: 'collection', op: 'eq', value: 'col-a' },
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual({ id: expect.stringMatching(/^[0-9a-f-]{36}$/) });
     });
 
-    // THEN
-    expect(response.status).toBe(200);
-    expect(response.body.items).toHaveLength(1);
-    expect(response.body.items[0].uri).toBe('urn:a');
-    expect(response.body.next_cursor).toBeNull();
-  });
+    /** @covers ANL-01-1 */
+    it('makes the stored record retrievable as the current version', async () => {
+      const created = await insert(aVariantBody({ score: 0.75 }));
 
-  it('filters current variants with a comparison operator', async () => {
-    // GIVEN
-    await insert({ uri: 'urn:low', score: 10 });
-    await insert({ uri: 'urn:high', score: 20 });
+      const page = await query({ where: { field: 'uri', op: 'eq', value: 'chr1:12345:A:T' } });
 
-    // WHEN
-    const response = await query({
-      where: { field: 'score', op: 'gte', value: 15 },
+      expect(page.body.items).toHaveLength(1);
+      expect(page.body.items[0]).toMatchObject({
+        id: created.body.id,
+        project_id: 42,
+        collection: 'study-1',
+        uri: 'chr1:12345:A:T',
+        origin: 'GERMLINE',
+        type: 'SNV/INDEL',
+        version_date: '2026-07-01T00:00:00.000Z',
+        score: 0.75,
+      });
     });
 
-    // THEN
-    expect(response.status).toBe(200);
-    expect(response.body.items).toHaveLength(1);
-    expect(response.body.items[0].uri).toBe('urn:high');
-  });
+    /** @covers ANL-01-4 */
+    it('accepts a record carrying only the required fields, leaving the rest empty', async () => {
+      await insert(aVariantBody());
 
-  it('returns a single current row per key, not every version', async () => {
-    // GIVEN
-    await insert({ uri: 'urn:x', version_date: '2024-01-01T00:00:00.000Z' });
-    await insert({ uri: 'urn:x', version_date: '2024-02-01T00:00:00.000Z' });
+      const page = await query();
 
-    // WHEN
-    const response = await query({
-      where: { field: 'uri', op: 'eq', value: 'urn:x' },
+      expect(page.body.items[0]).toMatchObject({ score: null, gene_symbol: null, hpo: [] });
     });
 
-    // THEN
-    expect(response.body.items).toHaveLength(1);
-  });
+    /** @covers ANL-01-5 */
+    it('sets the ingest timestamp itself', async () => {
+      const before = Date.now();
 
-  it('paginates results across pages with a cursor', async () => {
-    // GIVEN
-    await insert({ uri: 'urn:1' });
-    await insert({ uri: 'urn:2' });
-    await insert({ uri: 'urn:3' });
+      await insert(aVariantBody());
 
-    // WHEN
-    const page1 = await query({ limit: 2 }).expect(200);
-    const page2 = await query({ limit: 2, cursor: page1.body.next_cursor }).expect(200);
-
-    // THEN
-    expect(page1.body.items).toHaveLength(2);
-    expect(page1.body.next_cursor).toEqual(expect.any(String));
-
-    expect(page2.body.items).toHaveLength(1);
-    expect(page2.body.next_cursor).toBeNull();
-
-    const ids = [...page1.body.items, ...page2.body.items].map(
-      (item: { id: string }) => item.id,
-    );
-    expect(new Set(ids).size).toBe(3);
-  });
-
-  it('returns an empty page when nothing matches', async () => {
-    // WHEN
-    const response = await query({
-      where: { field: 'collection', op: 'eq', value: 'none' },
+      const page = await query();
+      const createdAt = new Date(page.body.items[0].created_at as string).getTime();
+      expect(createdAt).toBeGreaterThanOrEqual(before - 1_000);
+      expect(createdAt).toBeLessThanOrEqual(Date.now() + 1_000);
     });
 
-    // THEN
-    expect(response.status).toBe(200);
-    expect(response.body.items).toEqual([]);
-    expect(response.body.next_cursor).toBeNull();
-  });
+    /** @covers ANL-01-5 */
+    it('ignores an ingest timestamp a client tries to set', async () => {
+      const response = await insert(aVariantBody({ created_at: '2000-01-01T00:00:00.000Z' }));
 
-  it('rejects a query on an unknown field', async () => {
-    // WHEN
-    const response = await query({
-      where: { field: 'bogus_field', op: 'eq', value: 'x' },
+      // `created_at` is not part of the accepted body at all, so the request is refused
+      // rather than silently corrected.
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('created_at');
     });
 
-    // THEN
-    expect(response.status).toBe(400);
-    expect(response.body.code).toBe('unknown_query_field');
+    /** @covers ANL-01-2 */
+    it('rejects a record missing a required field, naming the field', async () => {
+      const body = aVariantBody();
+      delete body.collection;
+
+      const response = await insert(body);
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({
+        statusCode: 400,
+        code: 'missing_required_field',
+        message: 'A required field is missing: collection.',
+      });
+    });
+
+    /** @covers ANL-01-3 */
+    it('rejects an enumerated field outside its allowed set, naming the allowed values', async () => {
+      const response = await insert(aVariantBody({ origin: 'MOSAIC' }));
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({
+        statusCode: 400,
+        code: 'invalid_enum_value',
+        message: 'Field origin must be one of: GERMLINE, SOMATIC, TRIO, PGx.',
+      });
+    });
+
+    /** @covers ANL-01-6 */
+    it('appends rather than replaces: both versions stay in the store', async () => {
+      await insert(aVariantBody({ version_date: '2026-07-01T00:00:00.000Z' }));
+      await insert(aVariantBody({ version_date: '2026-07-02T00:00:00.000Z' }));
+
+      expect(await store.countRows()).toBe(2);
+    });
+
+    /** @covers ANL-01-7 ANL-02-4 */
+    it('returns only the current version of a variant with several versions', async () => {
+      await insert(aVariantBody({ version_date: '2026-07-01T00:00:00.000Z', score: 0.1 }));
+      await insert(aVariantBody({ version_date: '2026-07-02T00:00:00.000Z', score: 0.2 }));
+
+      const page = await query();
+
+      expect(page.body.items).toHaveLength(1);
+      expect(page.body.items[0]).toMatchObject({
+        version_date: '2026-07-02T00:00:00.000Z',
+        score: 0.2,
+      });
+    });
+
+    /** @covers ANL-01-7 */
+    it('resolves the current version by version_date, not by arrival order', async () => {
+      await insert(aVariantBody({ version_date: '2026-07-02T00:00:00.000Z', score: 0.2 }));
+      await insert(aVariantBody({ version_date: '2026-07-01T00:00:00.000Z', score: 0.1 }));
+
+      const page = await query();
+
+      expect(page.body.items).toHaveLength(1);
+      expect(page.body.items[0]).toMatchObject({
+        version_date: '2026-07-02T00:00:00.000Z',
+        score: 0.2,
+      });
+    });
+  });
+
+  describe('query', () => {
+    const insertMany = async (count: number, project = 42): Promise<void> => {
+      for (let index = 0; index < count; index += 1) {
+        await insert(aVariantBody({ project_id: project, uri: `chr1:${index}:A:T` }));
+      }
+    };
+
+    /** @covers ANL-02-1 */
+    it('returns the current variants matching the filters', async () => {
+      await insert(aVariantBody({ project_id: 1, uri: 'chr1:1:A:T' }));
+      await insert(aVariantBody({ project_id: 2, uri: 'chr2:2:A:T' }));
+
+      const page = await query({ where: { field: 'project_id', op: 'eq', value: 2 } });
+
+      expect(page.body.items).toHaveLength(1);
+      expect(page.body.items[0]).toMatchObject({ project_id: 2, uri: 'chr2:2:A:T' });
+    });
+
+    /** @covers ANL-02-2 */
+    it('returns every current variant when no filters are supplied', async () => {
+      await insertMany(3);
+
+      const page = await query();
+
+      expect(page.body.items).toHaveLength(3);
+      expect(page.body.next_cursor).toBeNull();
+    });
+
+    /** @covers ANL-02-6 */
+    it('returns an empty page rather than an error when nothing matches', async () => {
+      await insertMany(1);
+
+      const response = await query({ where: { field: 'project_id', op: 'eq', value: 9_999 } });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ items: [], next_cursor: null });
+    });
+
+    /** @covers ANL-02-3 */
+    it('pages with a cursor when more results exist', async () => {
+      await insertMany(3);
+
+      const first = await query({ limit: 2 });
+
+      expect(first.body.items).toHaveLength(2);
+      expect(first.body.next_cursor).not.toBeNull();
+    });
+
+    it('continues from the cursor without repeating or skipping a record', async () => {
+      await insertMany(5);
+
+      const first = await query({ limit: 2 });
+      const second = await query({ limit: 2, cursor: first.body.next_cursor });
+      const third = await query({ limit: 2, cursor: second.body.next_cursor });
+
+      const uris = [...first.body.items, ...second.body.items, ...third.body.items].map(
+        (item: { uri: string }) => item.uri,
+      );
+      expect(uris).toEqual(['chr1:0:A:T', 'chr1:1:A:T', 'chr1:2:A:T', 'chr1:3:A:T', 'chr1:4:A:T']);
+      expect(third.body.next_cursor).toBeNull();
+    });
+
+    // The literals are deliberate: ANL-02 states "defaults to 50 and is capped at 200",
+    // so 50 and 200 are the contract. Importing DEFAULT_PAGE_SIZE / MAX_PAGE_SIZE here
+    // would assert the code against itself — changing the constant would change the
+    // expectation with it, and the test would pass through the regression.
+    /** @covers ANL-02-3 */
+    it('defaults the page to 50 and caps it at 200, clamping rather than rejecting', async () => {
+      await insertMany(201);
+      // Default ordering is project_id, collection, uri ASC — uri compares as a STRING,
+      // so the page boundary falls on lexicographic order (chr1:0, chr1:1, chr1:10, …),
+      // not numeric. Asserting the exact slice pins that; a length check hides it.
+      const inStoredOrder = Array.from({ length: 201 }, (_, i) => `chr1:${i}:A:T`).sort();
+
+      const defaulted = await query();
+      const overMax = await query({ limit: 500 });
+
+      expect(Object.keys(defaulted.body).sort()).toEqual(['items', 'next_cursor']);
+      expect(defaulted.body.items.map((item: { uri: string }) => item.uri)).toEqual(
+        inStoredOrder.slice(0, 50),
+      );
+      expect(defaulted.body.next_cursor).toEqual(expect.any(String));
+
+      expect(overMax.status).toBe(200);
+      expect(Object.keys(overMax.body).sort()).toEqual(['items', 'next_cursor']);
+      expect(overMax.body.items.map((item: { uri: string }) => item.uri)).toEqual(
+        inStoredOrder.slice(0, 200),
+      );
+      expect(overMax.body.next_cursor).toEqual(expect.any(String));
+    });
+
+    /** @covers ANL-02-11 */
+    it('orders by the field the client asked for', async () => {
+      await insert(aVariantBody({ uri: 'chr1:1:A:T', score: 0.1 }));
+      await insert(aVariantBody({ uri: 'chr1:2:A:T', score: 0.9 }));
+
+      const page = await query({ order_by: [{ field: 'score', dir: 'desc' }] });
+
+      expect(page.body.items.map((item: { score: number }) => item.score)).toEqual([0.9, 0.1]);
+    });
+
+    /** @covers ANL-02-5 */
+    it('rejects a filter on a field that does not exist, naming the field', async () => {
+      const response = await query({ where: { field: 'not_a_column', op: 'eq', value: 1 } });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({
+        statusCode: 400,
+        code: 'unknown_query_field',
+        message: 'Unknown query field: not_a_column.',
+      });
+    });
+
+    it('rejects an operator outside the fixed set', async () => {
+      const response = await query({ where: { field: 'uri', op: 'regex', value: '.*' } });
+
+      expect(response.status).toBe(400);
+      expect(response.body.code).toBe('unknown_query_operator');
+    });
+
+    /** @covers ANL-02-10 */
+    it('rejects an over-nested query without reading any data', async () => {
+      // 10 `not` wrappers around the leaf is depth 11 — the FIRST depth the limit rejects.
+      // It used to be 11 wrappers (depth 12), which is over the line but not on it, so
+      // moving the limit from 10 to 11 left this test passing. A boundary probe has to sit
+      // on the boundary.
+      const overDeep = Array.from({ length: 10 }).reduce<Record<string, unknown>>(
+        (inner) => ({ not: inner }),
+        { field: 'project_id', op: 'eq', value: 1 },
+      );
+
+      const response = await query({ where: overDeep });
+
+      expect(response.status).toBe(400);
+      expect(response.body.code).toBe('query_too_complex');
+    });
+
+    /** @covers ANL-02-7 */
+    it('modifies nothing', async () => {
+      await insertMany(2);
+      const before = await store.countRows();
+
+      await query({ where: { field: 'project_id', op: 'eq', value: 42 } });
+
+      expect(await store.countRows()).toBe(before);
+    });
+
+    it('translates a nested condition tree', async () => {
+      await insert(aVariantBody({ uri: 'chr1:1:A:T', score: 0.95, gene_symbol: 'BRCA1' }));
+      await insert(aVariantBody({ uri: 'chr1:2:A:T', score: 0.10, gene_symbol: 'BRCA2' }));
+      await insert(aVariantBody({ uri: 'chr1:3:A:T', score: 0.99, gene_symbol: 'TP53' }));
+
+      const page = await query({
+        where: {
+          and: [
+            { field: 'project_id', op: 'eq', value: 42 },
+            {
+              or: [
+                { field: 'score', op: 'gte', value: 0.9 },
+                { field: 'gene_symbol', op: 'eq', value: 'BRCA2' },
+              ],
+            },
+            { not: { field: 'gene_symbol', op: 'eq', value: 'TP53' } },
+          ],
+        },
+        order_by: [{ field: 'uri', dir: 'asc' }],
+      });
+
+      expect(page.body.items.map((item: { uri: string }) => item.uri)).toEqual([
+        'chr1:1:A:T',
+        'chr1:2:A:T',
+      ]);
+    });
+
+    it('matches a code inside a list field', async () => {
+      await insert(aVariantBody({ uri: 'chr1:1:A:T', hpo: ['HP:0001250', 'HP:0002020'] }));
+      await insert(aVariantBody({ uri: 'chr1:2:A:T', hpo: ['HP:0009999'] }));
+
+      const page = await query({ where: { field: 'hpo', op: 'eq', value: 'HP:0001250' } });
+
+      expect(page.body.items.map((item: { uri: string }) => item.uri)).toEqual(['chr1:1:A:T']);
+    });
+
+    it('never returns a value a caller could have injected', async () => {
+      await insertMany(1);
+
+      const response = await query({
+        where: { field: 'uri', op: 'eq', value: "x' OR 1=1 --" },
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.body.items).toEqual([]);
+    });
   });
 });

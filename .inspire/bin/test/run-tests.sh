@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# .claude/bin/test/run-tests.sh — run quality_lib rules against fixtures
+# .inspire/bin/test/run-tests.sh — run quality_lib rules against fixtures
 #
 # Usage:
-#   .claude/bin/test/run-tests.sh                # run all tests
-#   .claude/bin/test/run-tests.sh <rule-name>    # run tests for one rule
+#   .inspire/bin/test/run-tests.sh                # run all tests
+#   .inspire/bin/test/run-tests.sh <rule-name>    # run tests for one rule
 #
-# Each fixture lives at .claude/bin/test/fixtures/{rule}/{scenario}/
+# Each fixture lives at .inspire/bin/test/fixtures/{rule}/{scenario}/
 # and contains:
 #   - spec/sdd/...  the test SDD tree to scan
 #   - expect.json   { "exit": N, "findings": [{rule, target_glob, message_substring}, ...] }
@@ -72,6 +72,29 @@ for fixture in "$FIXTURES_DIR"/*/*/; do
       echo "FAIL $rule/$scenario (missing finding: rule=$rule_match, msg~='$msg_substr')" >&2
     fi
   done < <(jq -c '.findings[]?' "$expect_file")
+
+  # Optional `finding_count`: assert HOW MANY findings the rule emitted, not just that
+  # the expected ones are among them.
+  #
+  # Added because a substring assertion cannot catch a rule that reports the same defect
+  # twice — found by a mutation drill, where breaking a de-duplication survived every
+  # fixture. Deduplication, "report once per file", and "suppress the per-item findings"
+  # are all behaviours whose only observable difference is a count, so a suite that cannot
+  # express one cannot defend them. Absent from expect.json = not checked, so every
+  # existing fixture is unaffected.
+  expected_count="$(jq -r '.finding_count // empty' "$expect_file")"
+  if [ -n "$expected_count" ]; then
+    # `grep -c` exits 1 when the count is zero, so `|| echo 0` appended a SECOND zero and
+    # produced "0\n0" — which never equals "0", so `finding_count: 0` could not pass. Count
+    # with a filter that always succeeds instead. Found by the first fixture that asserted
+    # zero findings, which is the case the original form could not express.
+    actual_count="$(grep -c '"rule":' "$actual_stderr" 2>/dev/null | head -1)"
+    [ -n "$actual_count" ] || actual_count=0
+    if [ "$actual_count" != "$expected_count" ]; then
+      pass=false
+      echo "FAIL $rule/$scenario (finding count: expected $expected_count, got $actual_count)" >&2
+    fi
+  fi
 
   if $pass; then
     echo "PASS $rule/$scenario"

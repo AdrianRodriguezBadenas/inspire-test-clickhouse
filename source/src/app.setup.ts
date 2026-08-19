@@ -1,52 +1,43 @@
-import {
-  BadRequestException,
-  INestApplication,
-  ValidationPipe,
-} from '@nestjs/common';
-import { ValidationError } from 'class-validator';
+/**
+ * The wiring every entry point shares — the real process and the e2e suite alike, so
+ * the tests exercise the pipeline that runs in production rather than a rebuilt one.
+ */
+
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppExceptionFilter } from './common/app-exception.filter';
 
-/**
- * Maps class-validator failures to the descriptor's error codes
- * (analytics::variant::create): an absent required field →
- * `missing_required_field`; an enum field with a disallowed value →
- * `invalid_enum_value`; anything else → `validation_error`.
- */
-function validationException(errors: ValidationError[]): BadRequestException {
-  const fields = errors.map((error) => error.property);
-
-  const hasMissing = errors.some((error) => error.value === undefined);
-  const hasBadEnum = errors.some(
-    (error) => error.value !== undefined && error.constraints?.isIn !== undefined,
-  );
-
-  const code = hasMissing
-    ? 'missing_required_field'
-    : hasBadEnum
-      ? 'invalid_enum_value'
-      : 'validation_error';
-
-  const message = hasMissing
-    ? `A required field is missing: ${fields.join(', ')}.`
-    : hasBadEnum
-      ? `Field ${fields.join(', ')} has a value outside its allowed set.`
-      : `Invalid request: ${fields.join(', ')}.`;
-
-  return new BadRequestException({ code, message, fields });
-}
-
-/**
- * Shared runtime configuration applied to both the real app (main.ts) and the
- * e2e app, so the two never drift.
- */
-export function configureApp(app: INestApplication): void {
+export function setupApp(app: INestApplication): void {
   app.useGlobalPipes(
     new ValidationPipe({
+      // Strip anything the DTO does not declare, and refuse the request rather than
+      // dropping it silently — on a hand-driven test API, a typo'd field name should
+      // be visible, not quietly ignored.
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
-      exceptionFactory: validationException,
     }),
   );
   app.useGlobalFilters(new AppExceptionFilter());
+}
+
+/**
+ * The Swagger surface. adr-graphql-query-transport keeps REST indefinitely precisely
+ * for this: it is how the team exercises the API by hand.
+ */
+export function setupSwagger(app: INestApplication): void {
+  const document = SwaggerModule.createDocument(
+    app,
+    new DocumentBuilder()
+      .setTitle('Variant store')
+      .setDescription(
+        'Stores and queries annotated genomic variants in ClickHouse. Reads return the ' +
+          'current version of each variant; the same query contract is also served, ' +
+          'read-only, at /graphql.',
+      )
+      .setVersion('0.1.0')
+      .build(),
+  );
+
+  SwaggerModule.setup('docs', app, document);
 }

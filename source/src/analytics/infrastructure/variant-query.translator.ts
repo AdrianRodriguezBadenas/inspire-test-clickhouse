@@ -1,209 +1,250 @@
-import { VARIANT_FIELD_TYPES } from '../domain/variant-fields';
-import {
-  Condition,
-  OrderBy,
-  QUERY_OPERATORS,
-  QueryOperator,
-  QueryValidationError,
-} from '../domain/variant-query';
+/**
+ * Translation of a validated condition tree into parameterized ClickHouse SQL.
+ *
+ * This is the only place that knows the query engine — the domain contract stays
+ * storage-agnostic (adr-variant-structured-query). Two rules hold without exception:
+ *
+ * - **Values are never concatenated.** Every value becomes a bound `{pN:Type}`
+ *   parameter typed from the field registry.
+ * - **Identifiers are never client text.** A field name reaches here only after the
+ *   domain validated it against the registry, so the allow-list — not escaping — is
+ *   what makes interpolating it safe.
+ */
 
+import { formatClickHouseDateTime } from './clickhouse-datetime';
+import { VariantOperator, SortDirection } from '../domain/variant-query';
+import { variantFieldSpec, type VariantFieldName } from '../domain/variant-fields';
+import type { ValidatedCondition, ValidatedQuery } from '../domain/variant-query.validation';
+
+/** A statement plus the parameters bound into it. */
 export interface TranslatedQuery {
   sql: string;
   params: Record<string, unknown>;
 }
 
-const OPERATORS = new Set<string>(QUERY_OPERATORS);
-const COMPARISON: ReadonlySet<QueryOperator> = new Set([
-  'lt',
-  'lte',
-  'gt',
-  'gte',
-  'between',
-]);
-const SQL_COMPARATOR: Record<string, string> = {
-  lt: '<',
-  lte: '<=',
-  gt: '>',
-  gte: '>=',
-};
+/**
+ * The natural key. It is both the `LIMIT 1 BY` dedup key and the ordering tie-break
+ * that makes paging deterministic.
+ */
+const NATURAL_KEY: readonly VariantFieldName[] = ['project_id', 'collection', 'uri'];
 
-function fieldType(field: string): string {
-  const type = VARIANT_FIELD_TYPES[field];
-  if (type === undefined) {
-    throw new QueryValidationError(
-      'unknown_query_field',
-      `Unknown query field: ${field}.`,
-    );
+/**
+ * Build the current-variants query.
+ *
+ * Shape, and why:
+ *
+ * ```sql
+ * SELECT * FROM (
+ *   SELECT * FROM variant [WHERE <pushed natural-key conditions>]
+ *   ORDER BY version_date DESC LIMIT 1 BY project_id, collection, uri   -- current only
+ * )
+ * [WHERE <all client conditions>]
+ * ORDER BY <client ordering>, project_id ASC, collection ASC, uri ASC
+ * LIMIT <limit + 1> OFFSET <offset>
+ * ```
+ *
+ * The client's conditions are applied **outside** the dedup on purpose: filtering
+ * first could surface a superseded row whose current version does not match, and
+ * ANL-02 requires that only current versions are ever returned.
+ *
+ * One extra row is requested beyond the page size — its presence is how the caller
+ * learns another page exists, without a second counting query.
+ */
+export function translateVariantQuery(query: ValidatedQuery, table: string): TranslatedQuery {
+  const binder = new ParameterBinder();
+  const rendered = new Map<ValidatedCondition, string>();
+
+  const outerWhere = query.where === null ? null : renderCondition(query.where, binder, rendered);
+  const innerWhere = renderPushdown(query.where, rendered);
+
+  const inner = [
+    `SELECT * FROM ${table}`,
+    innerWhere === null ? null : `WHERE ${innerWhere}`,
+    `ORDER BY version_date DESC`,
+    `LIMIT 1 BY ${NATURAL_KEY.join(', ')}`,
+  ].filter(isPresent);
+
+  const sql = [
+    `SELECT * FROM (`,
+    ...inner.map((line) => `  ${line}`),
+    `)`,
+    outerWhere === null ? null : `WHERE ${outerWhere}`,
+    `ORDER BY ${renderOrderBy(query.order_by)}`,
+    `LIMIT ${query.limit + 1} OFFSET ${query.offset}`,
+  ]
+    .filter(isPresent)
+    .join('\n');
+
+  return { sql, params: binder.params };
+}
+
+/**
+ * The conditions that may also run *inside* the dedup, to prune the scan.
+ *
+ * Only conditions on the natural key qualify, and only from a purely conjunctive top
+ * level. Those columns are the `LIMIT 1 BY` key, so restricting them cannot change
+ * which version of a surviving key is the current one — the filter and the dedup
+ * commute. A branch of an `or`/`not` carries no such guarantee, so nothing is pushed
+ * from one.
+ *
+ * This matters for more than latency: `project_id` is the one filter
+ * adr-variant-history-current-projection guarantees on every query, and the whole
+ * `ORDER BY (project_id, collection, uri, version_date)` layout exists so it prunes.
+ * Without the push-down, the dedup would read the table before the filter narrowed it.
+ */
+function renderPushdown(
+  where: ValidatedCondition | null,
+  rendered: Map<ValidatedCondition, string>,
+): string | null {
+  if (where === null) return null;
+
+  const branches = where.kind === 'and' ? where.children : [where];
+  const pushable = branches.filter(
+    (branch) => branch.kind === 'leaf' && NATURAL_KEY.includes(branch.field),
+  );
+
+  if (pushable.length === 0) return null;
+  if (pushable.length === 1) return rendered.get(pushable[0]) ?? null;
+
+  return pushable.map((branch) => `(${rendered.get(branch) ?? ''})`).join(' AND ');
+}
+
+function renderCondition(
+  node: ValidatedCondition,
+  binder: ParameterBinder,
+  rendered: Map<ValidatedCondition, string>,
+): string {
+  const sql = renderNode(node, binder, rendered);
+  rendered.set(node, sql);
+
+  return sql;
+}
+
+function renderNode(
+  node: ValidatedCondition,
+  binder: ParameterBinder,
+  rendered: Map<ValidatedCondition, string>,
+): string {
+  switch (node.kind) {
+    case 'and':
+    case 'or': {
+      const operator = node.kind === 'and' ? 'AND' : 'OR';
+      return node.children
+        .map((child) => `(${renderCondition(child, binder, rendered)})`)
+        .join(` ${operator} `);
+    }
+    case 'not':
+      return `NOT (${renderCondition(node.child, binder, rendered)})`;
+    case 'leaf':
+      return renderLeaf(node.field, node.op, node.value, binder);
   }
-  return type;
 }
 
-function isArray(type: string): boolean {
-  return type.startsWith('Array(');
+function renderLeaf(
+  field: VariantFieldName,
+  op: VariantOperator,
+  value: unknown,
+  binder: ParameterBinder,
+): string {
+  const spec = variantFieldSpec(field);
+  const bind = (raw: unknown, type = spec.bindType): string => binder.bind(coerce(raw), type);
+
+  if (spec.array === true) return renderArrayLeaf(field, op, value, bind, spec.bindType);
+
+  switch (op) {
+    case VariantOperator.EQ:
+      return `${field} = ${bind(value)}`;
+    case VariantOperator.NE:
+      return `${field} != ${bind(value)}`;
+    case VariantOperator.LT:
+      return `${field} < ${bind(value)}`;
+    case VariantOperator.LTE:
+      return `${field} <= ${bind(value)}`;
+    case VariantOperator.GT:
+      return `${field} > ${bind(value)}`;
+    case VariantOperator.GTE:
+      return `${field} >= ${bind(value)}`;
+    case VariantOperator.IN:
+      return `${field} IN ${bind(value, `Array(${spec.bindType})`)}`;
+    case VariantOperator.NIN:
+      return `${field} NOT IN ${bind(value, `Array(${spec.bindType})`)}`;
+    case VariantOperator.LIKE:
+      return `${field} LIKE ${bind(value, 'String')}`;
+    case VariantOperator.ILIKE:
+      return `${field} ILIKE ${bind(value, 'String')}`;
+    case VariantOperator.BETWEEN: {
+      const [low, high] = value as [unknown, unknown];
+      return `${field} BETWEEN ${bind(low)} AND ${bind(high)}`;
+    }
+    case VariantOperator.IS_NULL:
+      return `${field} IS NULL`;
+    case VariantOperator.IS_NOT_NULL:
+      return `${field} IS NOT NULL`;
+  }
 }
 
-function elementType(type: string): string {
-  return type.slice('Array('.length, -1);
+/**
+ * Array columns compare by membership, not equality — `hpo = 'HP:0001250'` would ask
+ * whether the whole array equals one code. The domain restricts array fields to the
+ * operators handled here (see `validateVariantQuery`).
+ */
+function renderArrayLeaf(
+  field: VariantFieldName,
+  op: VariantOperator,
+  value: unknown,
+  bind: (raw: unknown, type?: string) => string,
+  elementType: string,
+): string {
+  switch (op) {
+    case VariantOperator.EQ:
+      return `has(${field}, ${bind(value)})`;
+    case VariantOperator.NE:
+      return `NOT has(${field}, ${bind(value)})`;
+    case VariantOperator.IN:
+      return `hasAny(${field}, ${bind(value, `Array(${elementType})`)})`;
+    case VariantOperator.NIN:
+      return `NOT hasAny(${field}, ${bind(value, `Array(${elementType})`)})`;
+    default:
+      // Unreachable: the domain rejects every other operator on an array field.
+      throw new Error(`Operator ${op} cannot be translated for the array field ${field}.`);
+  }
 }
 
-class ParamBag {
-  private n = 0;
+function renderOrderBy(order: ValidatedQuery['order_by']): string {
+  const terms = order.map((term) => `${term.field} ${term.dir === SortDirection.DESC ? 'DESC' : 'ASC'}`);
+
+  // The natural key always closes the ordering: without a total order, two pages of
+  // the same query could repeat or skip a row — ANL-02 requires equivalent paging on
+  // every access route.
+  for (const field of NATURAL_KEY) {
+    if (!order.some((term) => term.field === field)) terms.push(`${field} ASC`);
+  }
+
+  return terms.join(', ');
+}
+
+/** Values ClickHouse cannot bind as-is become the literal it understands. */
+function coerce(value: unknown): unknown {
+  if (value instanceof Date) return formatClickHouseDateTime(value);
+  if (Array.isArray(value)) return value.map(coerce);
+
+  return value;
+}
+
+class ParameterBinder {
   readonly params: Record<string, unknown> = {};
+  private next = 0;
 
-  bind(type: string, value: unknown): string {
-    const name = `p${this.n++}`;
+  /** Bind a value and return its `{name:Type}` placeholder. */
+  bind(value: unknown, type: string): string {
+    const name = `p${this.next}`;
+    this.next += 1;
     this.params[name] = value;
+
     return `{${name}:${type}}`;
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function translateLeaf(field: string, op: QueryOperator, value: unknown, bag: ParamBag): string {
-  const type = fieldType(field);
-  const column = `\`${field}\``;
-  const array = isArray(type);
-  const scalarType = array ? elementType(type) : type;
-
-  if (array && COMPARISON.has(op)) {
-    throw new QueryValidationError(
-      'invalid_query',
-      `Operator ${op} is not supported on the array field ${field}.`,
-    );
-  }
-  if ((op === 'like' || op === 'ilike') && scalarType !== 'String') {
-    throw new QueryValidationError(
-      'invalid_query',
-      `Operator ${op} is only supported on string fields, not ${field}.`,
-    );
-  }
-
-  switch (op) {
-    case 'is_null':
-      return `${column} IS NULL`;
-    case 'is_not_null':
-      return `${column} IS NOT NULL`;
-    case 'eq':
-      return array
-        ? `has(${column}, ${bag.bind(scalarType, value)})`
-        : `${column} = ${bag.bind(scalarType, value)}`;
-    case 'ne':
-      return array
-        ? `NOT has(${column}, ${bag.bind(scalarType, value)})`
-        : `${column} != ${bag.bind(scalarType, value)}`;
-    case 'lt':
-    case 'lte':
-    case 'gt':
-    case 'gte':
-      return `${column} ${SQL_COMPARATOR[op]} ${bag.bind(scalarType, value)}`;
-    case 'like':
-      return `${column} LIKE ${bag.bind('String', value)}`;
-    case 'ilike':
-      return `${column} ILIKE ${bag.bind('String', value)}`;
-    case 'in':
-    case 'nin': {
-      if (!Array.isArray(value)) {
-        throw new QueryValidationError(
-          'invalid_query',
-          `Operator ${op} requires an array value for ${field}.`,
-        );
-      }
-      const placeholder = bag.bind(`Array(${scalarType})`, value);
-      return op === 'in'
-        ? `${column} IN ${placeholder}`
-        : `${column} NOT IN ${placeholder}`;
-    }
-    case 'between': {
-      if (!Array.isArray(value) || value.length !== 2) {
-        throw new QueryValidationError(
-          'invalid_query',
-          `Operator between requires a two-element array value for ${field}.`,
-        );
-      }
-      const lo = bag.bind(scalarType, value[0]);
-      const hi = bag.bind(scalarType, value[1]);
-      return `${column} BETWEEN ${lo} AND ${hi}`;
-    }
-    default:
-      throw new QueryValidationError(
-        'unknown_query_operator',
-        `Unsupported operator: ${String(op)}.`,
-      );
-  }
-}
-
-function translateCondition(cond: Condition, bag: ParamBag): string {
-  if (!isRecord(cond)) {
-    throw new QueryValidationError('invalid_query', 'Malformed condition.');
-  }
-
-  // Discriminate on the VALUE, not on key presence: a GraphQL input arrives as a
-  // class instance carrying every declared property (`and`, `or`, `not`, …) with
-  // `undefined` where the client omitted it, so `'and' in cond` would match a leaf.
-  // A REST body, being plain JSON, only carries the keys actually sent — checking
-  // the value is what makes both routes take the same branch.
-  if (cond.and !== undefined || cond.or !== undefined) {
-    const key = cond.and !== undefined ? 'and' : 'or';
-    const children = cond[key];
-    if (!Array.isArray(children) || children.length === 0) {
-      throw new QueryValidationError(
-        'invalid_query',
-        `"${key}" must be a non-empty array of conditions.`,
-      );
-    }
-    const joiner = key === 'and' ? ' AND ' : ' OR ';
-    return `(${children
-      .map((child) => translateCondition(child as Condition, bag))
-      .join(joiner)})`;
-  }
-
-  if (cond.not !== undefined) {
-    return `(NOT ${translateCondition(cond.not as Condition, bag)})`;
-  }
-
-  const leaf = cond as { field?: unknown; op?: unknown; value?: unknown };
-  if (typeof leaf.field !== 'string' || typeof leaf.op !== 'string') {
-    throw new QueryValidationError(
-      'invalid_query',
-      'A condition leaf needs a string field and op.',
-    );
-  }
-  if (!OPERATORS.has(leaf.op)) {
-    throw new QueryValidationError(
-      'unknown_query_operator',
-      `Unsupported operator: ${leaf.op}.`,
-    );
-  }
-  return translateLeaf(leaf.field, leaf.op as QueryOperator, leaf.value, bag);
-}
-
-/** Translate an optional condition tree to a parameterized WHERE fragment. */
-export function translateWhere(where: Condition | undefined): TranslatedQuery {
-  if (where === undefined) {
-    return { sql: '', params: {} };
-  }
-  const bag = new ParamBag();
-  const sql = translateCondition(where, bag);
-  return { sql, params: bag.params };
-}
-
-/** Translate an optional order-by list to a safe ORDER BY fragment (validated fields). */
-export function translateOrderBy(orderBy: OrderBy[] | undefined): string {
-  if (!orderBy || orderBy.length === 0) {
-    return '';
-  }
-  return orderBy
-    .map((entry) => {
-      fieldType(entry.field); // validates the field is known
-      if (entry.dir !== 'asc' && entry.dir !== 'desc') {
-        throw new QueryValidationError(
-          'invalid_query',
-          `Invalid sort direction: ${String(entry.dir)}.`,
-        );
-      }
-      return `\`${entry.field}\` ${entry.dir.toUpperCase()}`;
-    })
-    .join(', ');
+function isPresent<T>(value: T | null): value is T {
+  return value !== null;
 }

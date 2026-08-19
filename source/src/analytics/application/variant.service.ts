@@ -1,83 +1,71 @@
+/**
+ * The analytics module's business logic — the one place both the write and the read
+ * behavior lives.
+ *
+ * Every access route goes through here. adr-graphql-query-transport requires REST and
+ * GraphQL to be thin adapters over a single service, "a transport that grows logic of
+ * its own is the failure mode this decision exists to prevent"; the same holds for the
+ * file-based ingest path TASK-2mf2yu will add on the write side.
+ */
+
+import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { v4 as uuidv4 } from 'uuid';
-import { NewVariant, Variant } from '../domain/variant';
-import { VariantQuery } from '../domain/variant-query';
-import { assertQueryWithinLimits } from '../domain/variant-query.limits';
 import { VariantRepository } from '../infrastructure/variant.repository';
+import { validateVariantInput, type VariantSubmission } from '../domain/variant-input.validation';
+import { validateVariantQuery } from '../domain/variant-query.validation';
+import { encodeCursor } from '../domain/variant-cursor';
+import type { Variant } from '../domain/variant';
+import type { VariantPage, VariantQuery } from '../domain/variant-query';
 
-const DEFAULT_LIMIT = 50;
-const MAX_LIMIT = 200;
-
-export interface VariantPage {
-  items: Variant[];
-  next_cursor: string | null;
+/** What a caller gets back from a successful insert. */
+export interface CreatedVariant {
+  id: string;
 }
 
-/**
- * Business logic for variants. Realizes analytics::variant::create (ANL-01) and
- * analytics::variant::query (ANL-02). Throws generic `Error` on infrastructure
- * failure — translating to HTTP is the controller/filter's job.
- */
 @Injectable()
 export class VariantService {
   constructor(private readonly repository: VariantRepository) {}
 
   /**
-   * Insert a variant. `id` and `created_at` are system-generated here and are not
-   * taken from the caller; `version_date` (the logical version) comes from input.
-   * Returns the stored record's generated id.
+   * Validate and append a variant record.
+   *
+   * `id` and `created_at` are generated here and never read from the input — the
+   * create descriptor makes them system-generated, and ANL-01 requires the ingest
+   * timestamp to be the system's, not the client's. `version_date`, by contrast, is
+   * the caller's: it is the record's logical version, which is what makes
+   * out-of-order ingestion resolve correctly. A client that echoes back a record it
+   * read still gets fresh system fields — the assignments below come after the spread,
+   * so whatever it sent for them is overwritten rather than trusted.
    */
-  async create(input: NewVariant): Promise<{ id: string }> {
+  async create(input: VariantSubmission): Promise<CreatedVariant> {
+    validateVariantInput(input);
+
     const variant: Variant = {
       ...input,
-      id: uuidv4(),
+      id: randomUUID(),
       created_at: new Date(),
     };
 
-    try {
-      await this.repository.insert(variant);
-    } catch (error) {
-      throw new Error('Failed to store variant', { cause: error });
-    }
+    await this.repository.insert(variant);
 
     return { id: variant.id };
   }
 
   /**
-   * Query the current variants matching the structured query. `limit` defaults to
-   * 50 and is capped at 200; `next_cursor` is non-null when more results remain.
+   * Read a page of current variants.
    *
-   * The size guard runs here rather than in a transport adapter so every access
-   * route (REST, GraphQL) rejects an oversized tree identically, before any data
-   * is read.
+   * The store is asked for one row beyond the page; its presence is what says another
+   * page exists, and it is trimmed off before the page is handed back.
    */
-  async query(input: VariantQuery): Promise<VariantPage> {
-    assertQueryWithinLimits(input.where);
+  async query(query: VariantQuery): Promise<VariantPage> {
+    const validated = validateVariantQuery(query);
 
-    const limit = Math.min(Math.max(input.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
-    const offset = this.decodeCursor(input.cursor);
-
-    const rows = await this.repository.queryCurrent(
-      input.where,
-      input.order_by,
-      limit + 1,
-      offset,
-    );
-    const hasMore = rows.length > limit;
+    const rows = await this.repository.findCurrent(validated);
+    const hasMore = rows.length > validated.limit;
 
     return {
-      items: hasMore ? rows.slice(0, limit) : rows,
-      next_cursor: hasMore ? this.encodeCursor(offset + limit) : null,
+      items: hasMore ? rows.slice(0, validated.limit) : rows,
+      next_cursor: hasMore ? encodeCursor(validated.offset + validated.limit) : null,
     };
-  }
-
-  private encodeCursor(offset: number): string {
-    return Buffer.from(String(offset)).toString('base64');
-  }
-
-  private decodeCursor(cursor?: string): number {
-    if (!cursor) return 0;
-    const offset = parseInt(Buffer.from(cursor, 'base64').toString('utf8'), 10);
-    return Number.isNaN(offset) || offset < 0 ? 0 : offset;
   }
 }
