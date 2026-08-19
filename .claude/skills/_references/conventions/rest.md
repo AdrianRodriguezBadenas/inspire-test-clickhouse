@@ -24,6 +24,7 @@ column, once, for every action in the project.
 | State machine refuses the transition (e.g. cancel an already-shipped order) | `409` | Not `400`: the request is well-formed and the caller is allowed; the *state* is the obstacle. |
 | Rate limit exceeded | `429` | |
 | Downstream dependency unavailable or timed out | `502` / `504` | Never surfaced as `500` — a `500` claims the fault is ours. |
+| **Readiness probe** reporting the service cannot serve yet | `503` | A distinct case from the row above, and the distinction is the point: `502`/`504` answers *"your request failed because something downstream did"*, while `503` answers *"do not send me requests yet"*. The caller is an orchestrator, not a user, and it acts on the difference — a `503` withholds traffic or fails a deploy, a `502` does not. The body names **which** dependency is not ready; the probe checks its dependencies for real (a cheap query), because a probe that only proves the process is alive reports a healthy deploy on a service that cannot answer anything. |
 | Unhandled fault | `500` | Body carries **no** stacktrace, no internal paths, no framework frames. |
 
 Success side, by verb (the action verb taxonomy in

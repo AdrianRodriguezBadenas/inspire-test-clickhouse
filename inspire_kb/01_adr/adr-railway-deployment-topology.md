@@ -2,7 +2,7 @@
 produced:
   skill: adr
   skill_sha: b78410f
-  refs_sha: "6901372"
+  refs_sha: 263d8dc
   inspire: 0.6.0
   at: "2026-08-19"
 ---
@@ -74,15 +74,34 @@ hiding a real hole.
   `@nestjs/cli` — a dev dependency absent from a production install, so it works locally
   and fails on the platform. Production runs `npm run start:prod` (`node dist/main.js`).
 
+## Readiness, and what the platform is allowed to conclude
+
+`GET /health` is a **readiness** probe and `railway.json` declares it as
+`healthcheckPath`, so the platform stops treating "the process started" as "the deploy
+worked" — the failure this ADR's context describes.
+
+It asks ClickHouse a real question (`SELECT 1`), because a probe that only proves the
+process is alive is exactly what reported a healthy deploy on a service that could not
+answer anything. `503` when the store does not answer, from the `rest` convention's
+readiness row, and deliberately distinct from the `502`/`504` a failed *request* gets: a
+`503` tells an orchestrator to withhold traffic or fail a deploy, a `502` does not. The
+body names which dependency is not ready and nothing else — a probe is reachable by
+anyone who can reach the service, so no host, no port and no driver message goes in it.
+
+Two states, reached by two different mechanisms, and the split is worth knowing:
+
+- **No store at boot** → the app does not start at all (the schema hook throws), so the
+  probe is never reachable and the deploy fails on a healthcheck that never passed.
+- **Store lost after boot** → the app stays up and the probe answers `503`, which is the
+  state an orchestrator needs in order to route around it.
+
 ## Open gap
 
-**There is no health endpoint**, so `railway.json` declares no `healthcheckPath` and the
-platform treats "the process started" as "the deploy worked". That is precisely the failure
-this ADR's context describes, and deploying makes it urgent rather than theoretical:
-without it, and without logs, metrics or tracing, the only thing knowable about a running
-instance is whether it answers at all. Monitorability is unspecified in the knowledge base
-— no feature, no criterion, no ADR — and is the next decision to take, not a task to
-schedule.
+Readiness is not observability. There are still no logs worth querying, no metrics and no
+tracing, so what is knowable about a running instance is "it answers, and its store
+answers" — not whether it is slow, whether one request in a hundred fails, or whether the
+store is filling up. Monitorability is unspecified in the knowledge base — no feature, no
+criterion, no ADR — and is the next decision to take, not a task to schedule.
 
 ## Alternatives considered
 

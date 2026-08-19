@@ -1,0 +1,62 @@
+/**
+ * Readiness probe.
+ *
+ * Deliberately a **readiness** check and not a liveness one: it asks ClickHouse a real
+ * question. A probe that only proves the process is alive is what let this service report a
+ * successful deploy while answering every request with a 500 — the schema did not exist and
+ * nothing had noticed. An orchestrator that trusts such a probe routes traffic to an
+ * instance that cannot serve.
+ *
+ * `503` is the resolved `rest` convention's readiness row, and it is distinct from the
+ * `502`/`504` a failed request gets: `502` says "your request failed downstream", `503` says
+ * "do not send me requests yet". The caller is a platform, and it acts on the difference.
+ */
+
+import { Controller, Get, HttpCode, ServiceUnavailableException } from '@nestjs/common';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ClickHouseConnection } from '../analytics/infrastructure/clickhouse.provider';
+
+/** The cheapest question that still proves the connection round-trips. */
+const PROBE_QUERY = 'SELECT 1 AS ok';
+
+type DependencyState = 'ok' | 'unavailable';
+
+interface HealthReport {
+  status: 'ok' | 'unavailable';
+  dependencies: Record<string, DependencyState>;
+}
+
+@ApiTags('health')
+@Controller('health')
+export class HealthController {
+  constructor(private readonly connection: ClickHouseConnection) {}
+
+  @Get()
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Readiness probe — reports whether the service can serve' })
+  @ApiResponse({ status: 200, description: 'Ready: every dependency answered.' })
+  @ApiResponse({ status: 503, description: 'Not ready: a dependency did not answer.' })
+  async check(): Promise<HealthReport> {
+    let clickhouse: DependencyState = 'ok';
+
+    try {
+      await this.connection.query(PROBE_QUERY);
+    } catch {
+      // The cause is deliberately dropped rather than reported. A probe is reachable by
+      // anyone who can reach the service, so its body must not describe the internals —
+      // no host, no port, no driver message. The detail belongs in the logs.
+      clickhouse = 'unavailable';
+    }
+
+    const report: HealthReport = {
+      status: clickhouse === 'ok' ? 'ok' : 'unavailable',
+      dependencies: { clickhouse },
+    };
+
+    if (report.status !== 'ok') {
+      throw new ServiceUnavailableException(report);
+    }
+
+    return report;
+  }
+}

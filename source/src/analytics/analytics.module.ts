@@ -15,6 +15,8 @@ import { VariantResolver } from './controllers/variant.resolver';
 @Module({
   controllers: [VariantController],
   providers: [VariantService, VariantRepository, ClickHouseConnection, VariantResolver],
-  exports: [VariantService, VariantRepository],
+  // ClickHouseConnection is exported so the readiness probe can ask THE connection the
+  // product uses. A second client would let the probe pass while the real one is broken.
+  exports: [VariantService, VariantRepository, ClickHouseConnection],
 })
 export class AnalyticsModule {}

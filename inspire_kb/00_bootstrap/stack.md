@@ -66,8 +66,11 @@ deployed — that ADR is at `design` until an environment exists.
   a dev dependency that a production install does not have.
 - **The app creates its own schema on boot and refuses to start without the store.** A
   green deploy that answers every request with a 500 is the failure this replaces.
-- **No health endpoint yet**, so the platform reads "the process started" as "the deploy
-  worked". Named as an open gap in the ADR; monitorability is still unspecified.
+- **`GET /health` is the readiness probe**, declared as Railway's `healthcheckPath`. It
+  queries ClickHouse rather than just answering, and returns `503` naming the dependency
+  when the store does not — the `rest` convention's readiness row, distinct from the
+  `502`/`504` a failed request gets. Observability beyond it (logs, metrics, tracing) is
+  still unspecified; the ADR names it as the open gap.
 
 ## Tooling
 
