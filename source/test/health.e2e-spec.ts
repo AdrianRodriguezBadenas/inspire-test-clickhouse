@@ -20,7 +20,10 @@ describe('GET /health (e2e)', () => {
   });
 
   afterAll(async () => {
-    await store.app.close();
+    // `store.close()`, not `store.app.close()`. The latter shuts the app down and leaves the
+    // table behind — a leak this file had, visible as a stray `variant_e2e_health` in
+    // `SHOW TABLES` after a run. The harness's close is the one that drops it.
+    await store.close();
   });
 
   it('is reachable and reports every dependency ready', async () => {

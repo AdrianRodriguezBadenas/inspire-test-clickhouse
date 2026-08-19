@@ -263,6 +263,34 @@ These hold for **every** subcommand that writes code (`tdd`, `debug`'s fix,
 `fix-build`), and they are what `review` flags when violated. They are the
 generic, stack-agnostic core — the toolchain enforces the mechanical rest.
 
+### A flaky test is fixed, never re-run
+
+**A test that fails and passes on the next run is a defect, and the flakiness is the defect
+— not the run that caught it.** Fix it before continuing with anything else. Re-running to
+get green is forbidden, and so is recording the failure as unexplained and moving on.
+
+The reason is not tidiness. Every mechanical gate in a project is worth exactly what a red
+result is worth. One test that fails at random teaches everybody — operator and agent alike
+— that red might mean nothing, and from then on the honest failures get re-run too. A suite
+that is 99% reliable is not 99% as useful as a reliable one; it is a suite nobody reads.
+
+So, in order:
+
+1. **Capture the failure first.** Root cause before fix (Rule 4) has no exception here, and
+   an intermittent bug is exactly where a plausible guess is most expensive: it "works"
+   afterwards whether or not it was the cause, and the next occurrence is weeks away. Loop
+   the suite retaining each run's output until one goes red, and read *that* output.
+2. **Rule causes out with evidence, and say which you ruled out.** "The suites run in
+   parallel" is checkable in one line; asserting it without checking sends the fix in the
+   wrong direction and leaves the reader unable to re-derive the reasoning.
+3. **Only then fix**, and prove it by looping the suite again — a fix for an intermittent
+   failure is not verified by one green run, which is the state the bug already produced.
+
+The usual causes, in the order they are worth suspecting for an e2e suite against a real
+store: shared mutable state between test files, DDL or setup racing itself, a read issued
+before the write it depends on is visible, and time or ordering assumed rather than
+controlled.
+
 ### Never silence the toolchain
 Fix the root cause; do not gag the messenger. Forbidden as a default move:
 disabling lint rules inline, suppressing type errors (`@ts-ignore` /

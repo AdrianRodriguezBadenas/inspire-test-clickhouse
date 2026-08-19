@@ -88,6 +88,13 @@ logic never lives in a controller.
   fields. Assert full response bodies and full persisted documents, built from the
   domain entity — never compared against the value under test.
 - Run: `npm run test` (unit) · `npm run test:e2e` (e2e).
+- **E2E run serially, and that is a correctness requirement, not a performance choice.**
+  `maxWorkers: 1` in the e2e jest config is load-bearing: they share one real database, so
+  concurrent files interfere. Measured, not assumed — raising it to 3 produced 1 failure on
+  one run and 9 on the next, while serial passed 28 consecutive runs. Give each test FILE its
+  own table anyway (derive the name from the test path, never a shared constant, so a new file
+  cannot forget), and drop it with `DROP TABLE ... SYNC` — ClickHouse's drop is asynchronous by
+  default, so a plain drop can return while the table is still detaching.
 
 ## Forbidden patterns
 - Services throw a **generic `Error` with `cause`**, never HTTP exceptions —

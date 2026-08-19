@@ -17,8 +17,25 @@ import { ClickHouseConnection } from '../src/analytics/infrastructure/clickhouse
 import { VARIANT_TABLE } from '../src/analytics/infrastructure/variant-table.ddl';
 import { VariantOrigin, VariantType } from '../src/analytics/domain/variant';
 
-/** The table this suite owns. Set before the application reads its configuration. */
-export const E2E_TABLE = 'variant_e2e';
+/**
+ * The table a suite owns — **one per test FILE, not one shared by all of them**.
+ *
+ * It used to be a single `variant_e2e` that every e2e file created on entry and DROPped on
+ * exit. Three files sharing one mutable table, each dropping it, is shared mutable state
+ * between test files: the class of defect that produces failures which pass on a re-run. It
+ * is a defect on its own terms whether or not it caused the intermittent failures seen on
+ * 2026-08-19 — which were never captured, so this removes the category rather than claiming
+ * the cure (see TASK-hxr5ld and the flaky-test rule in `tdd.md`).
+ *
+ * Derived from the test path rather than passed in, because a per-file name that a new file
+ * can forget to set is the same bug waiting to be reintroduced.
+ */
+function tableForThisFile(): string {
+  const path = expect.getState().testPath ?? 'unknown';
+  const file = path.split('/').pop() ?? 'unknown';
+  const slug = file.replace(/\.e2e-spec\.ts$/, '').replace(/[^a-z0-9]+/gi, '_').toLowerCase();
+  return `variant_e2e_${slug}`;
+}
 
 export interface VariantStore {
   app: INestApplication;
@@ -31,7 +48,7 @@ export interface VariantStore {
 }
 
 export async function bootstrapVariantStore(): Promise<VariantStore> {
-  process.env.CLICKHOUSE_VARIANT_TABLE = E2E_TABLE;
+  process.env.CLICKHOUSE_VARIANT_TABLE = tableForThisFile();
 
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   const app = moduleRef.createNestApplication();
@@ -69,7 +86,12 @@ export async function bootstrapVariantStore(): Promise<VariantStore> {
     clear,
     countRows,
     close: async () => {
-      await connection.command(`DROP TABLE IF EXISTS ${connection.config.table}`);
+      // `SYNC`, because ClickHouse's DROP is asynchronous by default — verified on this
+      // server: `database_atomic_wait_for_drop_and_detach_synchronously = 0`. Without it the
+      // drop returns while the table is still detaching, so a `CREATE TABLE IF NOT EXISTS`
+      // that follows can see it and skip creation, leaving nothing behind. Per-file tables
+      // already make that sequence rare; making the drop synchronous removes it.
+      await connection.command(`DROP TABLE IF EXISTS ${connection.config.table} SYNC`);
       await app.close();
     },
   };

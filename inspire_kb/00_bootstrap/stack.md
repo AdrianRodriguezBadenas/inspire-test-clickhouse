@@ -97,6 +97,11 @@ start the cycle against infrastructure that is not up.
 Bring it up with the profile's command; the operator owns that, not the agent. The
 service declares a healthcheck, so "up" means healthy, not merely started.
 
+**The e2e suite runs serially against it, by necessity.** One real database is shared, so
+`maxWorkers: 1` is a correctness setting and not a speed one — measured at 1 and 9 failures
+on two consecutive parallel runs against 28 consecutive serial passes. Each test file owns
+its own table, derived from the test path so a new file cannot forget to isolate itself.
+
 **Adding a component is a KB edit before it is a compose edit.** A cache, a broker or a
 second database is a stack change: record it here (and as an ADR when it is load-bearing,
 per the rule at the top of this file), then add the service, then ask the operator to

@@ -173,3 +173,9 @@ The three that get violated by accident:
 
 Infrastructure first: e2e runs against real ClickHouse, so it must be **healthy** (not
 merely `Up`) before the first red test, and bringing it up is the operator's call.
+
+**And a fourth, promoted here because it protects the other three: a flaky test is fixed,
+never re-run.** A test that fails and passes on the next run makes red mean "maybe", and
+every gate in this project is worth exactly what red is worth. Capture the failing run
+before changing anything, name the causes you ruled out, and verify the fix by looping the
+suite — one green run is the state the bug already produced. Full rule in `tdd.md`.
