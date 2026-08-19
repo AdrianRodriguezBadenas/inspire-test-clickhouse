@@ -11,7 +11,12 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
 
   const port = Number(process.env.PORT ?? 3000);
-  await app.listen(port);
+
+  // Bind `::`, not the default. Railway's private network resolves a service's internal
+  // DNS name to an IPv6 address (and, in environments created from October 2025 on, to an
+  // IPv4 one too), so a server listening on IPv4 only is unreachable from a sibling
+  // service. `::` covers both families and is a no-op locally.
+  await app.listen(port, '::');
 
   new Logger('bootstrap').log(`Listening on :${port} — REST /variants · GraphQL /graphql · docs /docs`);
 }

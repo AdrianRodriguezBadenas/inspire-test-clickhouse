@@ -3,7 +3,7 @@
  * before anything reached here.
  */
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { ClickHouseConnection } from './clickhouse.provider';
 import { formatClickHouseDateTime, parseClickHouseDateTime } from './clickhouse-datetime';
 import { translateVariantQuery } from './variant-query.translator';
@@ -22,8 +22,27 @@ type VariantRow = Omit<Variant, 'created_at' | 'version_date'> & {
 };
 
 @Injectable()
-export class VariantRepository {
+export class VariantRepository implements OnModuleInit {
   constructor(private readonly connection: ClickHouseConnection) {}
+
+  /**
+   * Create the schema as part of coming up.
+   *
+   * `ensureTable` existed before this hook did, and only the e2e harness called it — so a
+   * deployed instance started cleanly and answered every request with 500 ("Unknown table
+   * expression identifier 'variant'") while the platform reported a successful deploy,
+   * because the process was alive. The DDL is `CREATE TABLE IF NOT EXISTS`, so running it
+   * on every boot is idempotent.
+   *
+   * Throwing here is deliberate: a boot that cannot reach the store **must fail** rather
+   * than serve a broken instance. Two consequences worth knowing — the store has to be up
+   * before the app (deploy order matters), and with several instances they would race on
+   * the DDL, which `IF NOT EXISTS` makes harmless but which is the point at which this
+   * belongs in a pre-deploy step instead.
+   */
+  async onModuleInit(): Promise<void> {
+    await this.ensureTable();
+  }
 
   private get table(): string {
     return this.connection.config.table;

@@ -47,6 +47,28 @@ moving off a deployed database) is an ADR.
   [`01_adr`](../01_adr). Accessed from NestJS via the official
   `@clickhouse/client`.
 
+## Deployment
+
+Where the product runs, decided in
+[`adr-railway-deployment-topology`](../01_adr/adr-railway-deployment-topology.md). Not yet
+deployed — that ADR is at `design` until an environment exists.
+
+- **Railway**, one project, two services: the application and ClickHouse.
+- **ClickHouse is a sibling service** from the official image with a persistent volume,
+  reachable only on the project's private network (`clickhouse.railway.internal:8123`,
+  plain `http`). Never published.
+- **Deploys are git-linked** — pushing the repository is the trigger. No CLI, no
+  credentials in the loop.
+- The app lives in a subdirectory, so the service carries **Root Directory `/source`** and
+  **config file `/source/railway.json`**. Both are platform settings: Railway's config file
+  does not follow the Root Directory and cannot declare either one.
+- **Production entry point is `npm run start:prod`**, never `npm start` — the latter needs
+  a dev dependency that a production install does not have.
+- **The app creates its own schema on boot and refuses to start without the store.** A
+  green deploy that answers every request with a 500 is the failure this replaces.
+- **No health endpoint yet**, so the platform reads "the process started" as "the deploy
+  worked". Named as an open gap in the ADR; monitorability is still unspecified.
+
 ## Tooling
 
 - One package manager, one lint/format config; ESLint for linting.
