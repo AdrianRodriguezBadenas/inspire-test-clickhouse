@@ -27,6 +27,42 @@ export class VariantController {
       'because ClickHouse produces one part per insert (ANL-01, TASK-2mf2yu).',
   })
   @ApiCreatedResponse({ type: CreatedVariantDto })
+  @ApiBody({
+    type: CreateVariantDto,
+    // A curated example, because a generated one is unusable here on both counts: the entity
+    // has 288 fields, so the body Swagger builds from the schema is hundreds of lines nobody
+    // would send, and the placeholders it invents for them are not valid input. What a person
+    // hand-testing this API needs is the shortest body that works.
+    examples: {
+      minimal: {
+        summary: 'The natural key plus the two enums — the smallest accepted record',
+        value: {
+          project_id: 42,
+          collection: 'study-1',
+          uri: 'chr1:12345:A:T',
+          origin: 'GERMLINE',
+          type: 'SNV/INDEL',
+          version_date: '2026-07-01T00:00:00.000Z',
+        },
+      },
+      annotated: {
+        summary: 'With a few annotation fields, to show their shape',
+        value: {
+          project_id: 42,
+          collection: 'study-1',
+          uri: 'chr1:12345:A:T',
+          origin: 'GERMLINE',
+          type: 'SNV/INDEL',
+          version_date: '2026-07-01T00:00:00.000Z',
+          hpo: ['HP:0001250'],
+          score: 0.87,
+          allele_frequency: 0.0001,
+          gene_symbol: 'BRCA1',
+          feat_consequence: 'missense_variant',
+        },
+      },
+    },
+  })
   async create(@Body() body: CreateVariantDto): Promise<CreatedVariantDto> {
     return new CreatedVariantDto(await this.service.create(body));
   }
